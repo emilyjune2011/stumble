@@ -1,0 +1,18 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,400..800,100&family=Figtree:wght@400;500;600&display=swap");
+:root{--paper:#FBF3E6;--card:#FFFBF4;--ink:#3B2A26;--soft:#7A625A;--rose:#B5657A;--rose-tint:#F3DDE0;--amber:#D99A2B;--moss:#6E7A4F;--line:#E8D6C2}
+@media (prefers-color-scheme:dark){:root{--paper:#221A1B;--card:#2E2325;--ink:#F4E6D6;--soft:#C3AA9E;--rose:#E0929F;--rose-tint:#4A2F35;--amber:#E8B04D;--moss:#A5B283;--line:#4A3A36}}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.5}
+.serif{font-family:"Fraunces",Georgia,serif;font-variation-settings:"SOFT" 100}
+button{font:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.go{display:block;width:100%;font-family:"Fraunces",Georgia,serif;font-weight:700;font-size:1.5rem;background:var(--rose);color:var(--card);border:0;border-radius:16px;padding:14px;box-shadow:0 5px 0 color-mix(in srgb,var(--rose) 60%,var(--ink))}
+.go:active{transform:translateY(3px);box-shadow:0 2px 0 color-mix(in srgb,var(--rose) 60%,var(--ink))}
+.go:disabled{opacity:.5;cursor:progress}
+.btn{background:none;border:1.5px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:10px}
+.btn[aria-pressed="true"]{border-color:var(--rose);color:var(--rose);font-weight:600}
+.link{background:none;border:0;color:var(--soft);text-decoration:underline;padding:4px 0;font-size:.88rem}
+.chip{border:1.5px solid var(--line);background:transparent;color:var(--ink);padding:7px 14px;border-radius:999px}
+.chip[aria-pressed="true"]{background:var(--rose-tint);border-color:var(--rose);font-weight:600}
+.chip .rm{margin-left:6px;opacity:.6}
+input,select{font:inherit;background:var(--card);color:var(--ink);border:1.5px solid var(--line);border-radius:10px;padding:9px 12px}

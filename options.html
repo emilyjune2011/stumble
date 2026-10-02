@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Stumble settings</title><link rel="stylesheet" href="style.css">
+<style>
+main{max-width:640px;margin:0 auto;padding:36px 22px 60px}
+h1{font-weight:700;font-size:4rem;line-height:.9;letter-spacing:-.03em;margin:0 0 10px;color:var(--rose)}
+h2{font-weight:600;font-size:1.2rem;margin:34px 0 10px}
+.intro,.help{color:var(--soft);max-width:52ch;margin:0 0 10px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.add{display:flex;gap:8px;margin:6px 0}
+.add input{flex:1;min-width:0}
+.field{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.field label{font-weight:600}
+.saved{list-style:none;padding:0;margin:0}
+.saved li{display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line)}
+.saved a{color:var(--ink);font-weight:600}
+.saved small{color:var(--soft)}
+.note{color:var(--moss);font-weight:600;min-height:1.5em}
+.trow{display:grid;grid-template-columns:minmax(0,1fr) 120px 70px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.meter{height:8px;border-radius:4px;background:var(--line);position:relative;overflow:hidden}
+.meter span{position:absolute;top:0;bottom:0;border-radius:4px}
+.lean{font-size:.85rem;color:var(--soft);text-align:right}
+.sub{font-weight:600;margin:16px 0 4px;color:var(--soft);font-size:.9rem}
+kbd{border:1.5px solid var(--line);border-radius:6px;padding:1px 6px;font:inherit;font-size:.9rem}
+</style></head>
+<body><main>
+  <h1 class="serif">Stumble</h1>
+  <p class="intro">Click the Stumble button in your toolbar, or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>, and the current tab jumps to a random site that fits your interests. <button class="link" id="shortcuts" type="button">Change the shortcut</button></p>
+
+  <h2 class="serif">Your interests</h2>
+  <div class="chips" id="chips"></div>
+  <div class="add">
+    <input id="addInput" maxlength="40" placeholder="Add any interest, like brutalism or synths" aria-label="Add an interest">
+    <button class="btn" id="addBtn" type="button">Add</button>
+  </div>
+  <button class="link" id="toggleAll" type="button">Select all</button>
+
+  <h2 class="serif">Endless stumbling</h2>
+  <p class="help">Without a key, Stumble uses its built-in list of about 85 sites. With a Claude API key, it keeps finding new ones in batches of 25, shaped by what you like and skip. Get a key at console.anthropic.com. Usage is billed to your API account, and the key stays on this computer.</p>
+  <div class="field">
+    <label for="key">Claude API key</label>
+    <input id="key" type="password" autocomplete="off" placeholder="sk-ant-…">
+  </div>
+  <div class="field">
+    <label for="model">Model</label>
+    <select id="model">
+      <option value="claude-sonnet-5">Claude Sonnet 5 (better finds)</option>
+      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (cheaper, faster)</option>
+    </select>
+  </div>
+  <button class="btn" id="saveKey" type="button">Save and test key</button>
+  <p class="note" id="note"></p>
+
+  <h2 class="serif">Your taste so far</h2>
+  <p class="help">Every 👍 and 👎 nudges how often each interest and kind of site comes up. This is what Stumble has learned.</p>
+  <div id="taste"></div>
+  <button class="link" id="resetTaste" type="button">Start fresh</button>
+
+  <h2 class="serif">Liked sites (<span id="likedCount">0</span>)</h2>
+  <ul class="saved" id="saved"></ul>
+
+  <h2 class="serif">History</h2>
+  <p class="help">Stumble won't show a site twice. Clearing history lets old finds come back around.</p>
+  <button class="btn" id="clear" type="button">Clear history</button>
+  <script src="sites.js"></script>
+  <script src="options.js"></script>
+</main></body></html>
