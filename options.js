@@ -3,7 +3,7 @@ const CATS = Object.keys(SITES);
 let st = {};
 
 async function load() {
-  st = Object.assign({ interests: CATS, custom: [], saved: [], apiKey: "", model: "claude-sonnet-5" }, await chrome.storage.local.get(null));
+  st = Object.assign({ interests: CATS, custom: [], saved: [], apiKey: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5" }, await chrome.storage.local.get(null));
 }
 const allCats = () => [...CATS, ...st.custom];
 async function saveInterests() {
@@ -43,10 +43,25 @@ $("addBtn").onclick = addInterest;
 $("addInput").addEventListener("keydown", e => { if (e.key === "Enter") addInterest(); });
 $("toggleAll").onclick = () => { st.interests = allCats().every(c => st.interests.includes(c)) ? [] : allCats(); saveInterests(); };
 
+// Show the fields and model suggestions for the chosen provider.
+function renderProvider(keepModel) {
+  const id = $("provider").value, p = PROVIDERS[id];
+  $("baseUrlField").hidden = id !== "custom";
+  $("key").placeholder = p.keyHint;
+  $("getKey").textContent = p.console ? `Get a key at ${p.console}. ` : "";
+  $("models").innerHTML = "";
+  p.models.forEach(([v, label]) => $("models").appendChild(Object.assign(document.createElement("option"), { value: v, label })));
+  if (!keepModel) $("model").value = p.models[0]?.[0] || "";
+  $("modelHelp").textContent = p.models.length ? "Pick a suggestion or type any model name your account can use." : "The model name your service uses, like llama3.1 or mistral-large-latest.";
+}
+$("provider").onchange = () => renderProvider(false);
+
 $("saveKey").onclick = async () => {
-  const apiKey = $("key").value.replace(/[^\x21-\x7E]/g, ""), model = $("model").value;
-  await chrome.storage.local.set({ apiKey, model, lastError: "" });
-  if (!apiKey) { $("note").textContent = "Key removed. Stumble will use the built-in list."; return; }
+  const apiKey = cleanKey($("key").value), provider = $("provider").value, model = $("model").value.trim(), baseUrl = $("baseUrl").value.trim();
+  if (provider === "custom" && baseUrl && !/^https?:\/\//i.test(baseUrl)) { $("note").textContent = "The base URL should start with https:// (or http:// for a service on your computer)."; return; }
+  if ((apiKey || baseUrl) && !model) { $("note").textContent = "Enter a model name."; return; }
+  await chrome.storage.local.set({ apiKey, provider, model, baseUrl, lastError: "" });
+  if (!aiOn({ apiKey, provider, baseUrl })) { $("note").textContent = "Key removed. Stumble will use the built-in list."; return; }
   $("note").textContent = "Saved. Testing the key…";
   const r = await chrome.runtime.sendMessage({ type: "testKey" });
   if (r && r.ok) { $("note").textContent = "Key works. Finding your first batch of sites now."; chrome.runtime.sendMessage({ type: "refill" }); }
@@ -104,4 +119,4 @@ $("resetTaste").onclick = async () => {
 };
 
 chrome.storage.onChanged.addListener(async (ch) => { if (ch.saved || ch.taste) { await load(); renderSaved(); renderTaste(); } });
-(async () => { await load(); $("key").value = st.apiKey; $("model").value = st.model; renderChips(); renderSaved(); renderTaste(); })();
+(async () => { await load(); $("key").value = st.apiKey; $("provider").value = PROVIDERS[st.provider] ? st.provider : "anthropic"; $("baseUrl").value = st.baseUrl; $("model").value = st.model; renderProvider(true); renderChips(); renderSaved(); renderTaste(); })();

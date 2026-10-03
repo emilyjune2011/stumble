@@ -1,9 +1,9 @@
-importScripts("sites.js");
+importScripts("sites.js", "providers.js");
 
 const CATS = Object.keys(SITES);
 const DEFAULTS = {
   interests: CATS, custom: [], seen: [], saved: [], skipped: [], dead: [], queue: [],
-  current: null, apiKey: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
+  current: null, apiKey: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
   taste: { cats: {}, kinds: {} }, ratedSinceRefill: 0
 };
 const norm = u => { try { const x = new URL(u); return (x.hostname.replace(/^www\./, "") + x.pathname.replace(/\/+$/, "") + x.search).toLowerCase(); } catch (e) { return String(u).toLowerCase(); } };
@@ -57,6 +57,21 @@ function similar(a, b) {
   return shared >= 3;
 }
 
+// Sites shown recently, by host (seen holds normalized "host/path" keys).
+const seenHosts = (st, n) => new Set(st.seen.slice(-n).map(k => k.split("/")[0]));
+const LIBRARY_HOSTS = [...new Set(Object.values(SITES).flatMap(([, list]) => list.map(s => hostOf(s[1]))))];
+
+// Each batch leans a few random ways, so the AI doesn't keep reaching for the same famous picks.
+const ANGLES = [
+  "made by a single person as a labor of love", "from outside the English-speaking world (still usable in English)",
+  "from the early web, before 2010, and still online", "a university, library, or museum project most people never find",
+  "built around one very specific hobby or obsession", "a tool or toy that does exactly one thing well",
+  "a collection or archive someone has been building for years", "small and recent, made in the last few years",
+  "a personal site with a strong visual style", "something you can listen to", "a long, beautiful piece of writing",
+  "a map, atlas, or explorable place", "a database of something oddly specific", "made by an artist, designer, or musician"
+];
+const pickAngles = n => [...ANGLES].sort(() => Math.random() - 0.5).slice(0, n);
+
 function libraryFresh(st) {
   const seen = new Set(st.seen), out = [];
   st.interests.forEach(c => { if (SITES[c]) SITES[c][1].forEach(s => { if (!seen.has(norm(s[1]))) out.push({ cat: c, icon: SITES[c][0], title: s[0], url: s[1], blurb: s[2] }); }); });
@@ -71,7 +86,7 @@ function kindNote(st) {
 }
 
 function buildPrompt(st) {
-  const recent = st.seen.slice(-450).concat(st.queue.map(q => norm(q.url)));
+  const shown = [...new Set([...seenHosts(st, 3000), ...st.queue.map(q => hostOf(q.url)), ...LIBRARY_HOSTS])].slice(-600);
   const liked = st.saved.slice(0, 20).map(s => `${s.title} (${hostOf(s.url)})`);
   const nope = st.skipped.slice(-20).map(s => `${s.title} (${s.host})`);
   return `You are the engine of a StumbleUpon-style discovery app. Suggest 25 websites for one person to stumble onto, one at a time.
@@ -79,17 +94,18 @@ function buildPrompt(st) {
 Their interests: ${st.interests.join(", ")}.
 Aim for roughly this share of the batch per interest, based on what they've been liking and skipping: ${shares(st).map(([c, p]) => `${c} ${p}%`).join(", ")}. Wildcard means anything at all outside their interests, to widen their world. Spread things out rather than bunching.${kindNote(st)}
 
-Aim for the delightful long tail of the web: personal sites, niche blogs, single-purpose interactive toys, digital archives and museum collections, fan-made databases, generators, web art, hobbyist reference sites, small magazines, odd one-page projects, beautiful essays. Vary the kind of site as much as the topic. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
+Aim for the delightful long tail of the web: personal sites, niche blogs, single-purpose interactive toys, digital archives and museum collections, fan-made databases, generators, web art, hobbyist reference sites, small magazines, odd one-page projects, beautiful essays. Vary the kind of site as much as the topic. For this batch, lean toward sites that are: ${pickAngles(3).join("; ")}.
+Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
 Only include sites you are confident exist and are still online. Prefer a homepage or a long-stable URL over a deep link. Every entry must be a different site.
 ${liked.length ? `\nThey loved these, so more in this spirit is welcome: ${liked.join("; ")}.` : ""}${nope.length ? `\nThey marked these "not for me", so steer away from similar: ${nope.join("; ")}.` : ""}${st.dead.length ? `\nThese sites turned out to be dead, avoid them: ${st.dead.slice(-40).join(", ")}.` : ""}
 
-Do not suggest any site already shown (listed as host/path): ${recent.join(", ")}
+They have already seen these websites, so suggest nothing on them, not even a different page: ${shown.join(", ")}
 
 Reply with only a JSON array of 25 objects, no other text:
 [{"title":"Site name","url":"https://...","interest":"one of their interests, exactly as written, or Wildcard","kind":"one of: ${KINDS.join(" | ")}","emoji":"one emoji","blurb":"One plain sentence under 20 words saying what it is."}]`;
 }
 
-// Pull every complete {...} object out of Claude's reply, even if the array got cut off.
+// Pull every complete {...} object out of the AI's reply, even if the array got cut off.
 function parseSites(text) {
   try {
     const arr = JSON.parse(text.slice(text.indexOf("["), text.lastIndexOf("]") + 1));
@@ -106,53 +122,78 @@ function parseSites(text) {
   return out;
 }
 
-// Ask Claude for a batch, streaming the reply. Streaming matters: Chrome shuts down an extension's
+// Build the HTTP request for a provider. Claude has its own format; everything else speaks OpenAI's.
+function aiRequest(st, content, opts) {
+  const key = cleanKey(st.apiKey), model = st.model || DEFAULTS.model;
+  const messages = [{ role: "user", content }];
+  if (st.provider === "anthropic" || !PROVIDERS[st.provider]) {
+    return { headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+      body: { model, max_tokens: opts.maxTokens, stream: opts.stream, messages } };
+  }
+  const headers = { "content-type": "application/json" };
+  if (key) headers.authorization = "Bearer " + key;
+  const body = { model, stream: opts.stream, messages };
+  // OpenAI's newer models only take max_completion_tokens; Gemini picks its own limit; other services expect max_tokens.
+  if (st.provider === "openai") body.max_completion_tokens = opts.maxTokens;
+  else if (st.provider === "custom") body.max_tokens = opts.maxTokens;
+  return { headers, body };
+}
+async function aiFetch(st, content, opts) {
+  const { headers, body } = aiRequest(st, content, opts);
+  return fetch(endpointOf(st), { method: "POST", headers, body: JSON.stringify(body) });
+}
+const errMsg = b => b?.error?.message || (Array.isArray(b) && b[0]?.error?.message) || (typeof b?.error === "string" && b.error) || "";
+
+// Ask the AI for a batch, streaming the reply. Streaming matters: Chrome shuts down an extension's
 // background worker if a request takes 30+ seconds to start answering, which a big batch can.
-async function askClaude(st) {
-  const key = String(st.apiKey).replace(/[^\x21-\x7E]/g, "");   // strip invisible characters picked up when pasting
+async function askAI(st) {
+  const name = providerOf(st).name, home = providerOf(st).console;
+  if (st.provider === "custom" && !String(st.baseUrl || "").trim()) throw new Error("Add your AI service's base URL in settings.");
   let res;
   try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true"
-      },
-      body: JSON.stringify({ model: st.model || DEFAULTS.model, max_tokens: 8000, stream: true, messages: [{ role: "user", content: buildPrompt(st) }] })
-    });
+    res = await aiFetch(st, buildPrompt(st), { maxTokens: 8000, stream: true });
   } catch (e) {
-    throw new Error(`Couldn't connect to the Claude API (${e.message}). Check your internet connection.`);
+    throw new Error(`Couldn't connect to ${name} (${e.message}). Check your internet connection${st.provider === "custom" ? " and the base URL in settings" : ""}.`);
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const msg = body?.error?.message || res.statusText || "unknown error";
-    if (res.status === 401) throw new Error("Your API key was rejected. Check it in settings.");
+    const msg = errMsg(body) || res.statusText || "unknown error";
+    if (res.status === 401 || (res.status === 400 && /api key/i.test(msg))) throw new Error("Your API key was rejected. Check it in settings.");
     if (res.status === 403) throw new Error(`Your API key doesn't have access: ${msg}`);
-    if (res.status === 404) throw new Error(`The model "${st.model}" wasn't found. Try the other model in settings. (${msg})`);
-    if (res.status === 400 && /credit|billing|balance/i.test(msg)) throw new Error("Your API account is out of credits. Add some at console.anthropic.com.");
+    if (res.status === 404) throw new Error(`The model "${st.model}" wasn't found. Try a different model in settings. (${msg})`);
+    if (/credit|billing|balance|quota/i.test(msg)) throw new Error(`Your API account is out of credits${home ? `. Add some at ${home}` : ""}.`);
     if (res.status === 429) throw new Error("Hit the API rate limit. Using built-in sites for a bit.");
-    if (res.status === 529 || res.status >= 500) throw new Error("Claude's API is busy right now. It'll try again on your next few stumbles.");
+    if (res.status === 529 || res.status >= 500) throw new Error(`${name} is busy right now. It'll try again on your next few stumbles.`);
     throw new Error(`The API returned an error (${res.status}): ${msg}`);
   }
   const reader = res.body.getReader(), dec = new TextDecoder();
   let buf = "", text = "", stop = "";
+  const handle = line => {
+    if (!line.startsWith("data:")) return;
+    const data = line.slice(5).trim();
+    if (data === "[DONE]") return;
+    let ev; try { ev = JSON.parse(data); } catch (e) { return; }
+    if (ev.error) throw new Error(`${name} had a problem mid-reply: ${errMsg(ev) || "unknown"}. It'll try again soon.`);
+    // Claude's events
+    if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") text += ev.delta.text;
+    else if (ev.type === "message_delta" && ev.delta?.stop_reason) stop = ev.delta.stop_reason;
+    // OpenAI-style chunks
+    const choice = ev.choices?.[0];
+    if (choice) {
+      if (typeof choice.delta?.content === "string") text += choice.delta.content;
+      if (choice.finish_reason) stop = choice.finish_reason;
+    }
+  };
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     buf += dec.decode(value, { stream: true });
     const lines = buf.split("\n"); buf = lines.pop();
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      let ev; try { ev = JSON.parse(line.slice(5)); } catch (e) { continue; }
-      if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") text += ev.delta.text;
-      else if (ev.type === "message_delta" && ev.delta?.stop_reason) stop = ev.delta.stop_reason;
-      else if (ev.type === "error") throw new Error(`Claude's API had a problem mid-reply: ${ev.error?.message || "unknown"}. It'll try again soon.`);
-    }
+    lines.forEach(handle);
   }
+  handle(buf);
   const sites = parseSites(text);
-  if (!sites.length) throw new Error(`Claude replied, but not with a list of sites${stop ? ` (stopped: ${stop})` : ""}. It'll try again on your next stumble.`);
+  if (!sites.length) throw new Error(`${name} replied, but not with a list of sites${stop ? ` (stopped: ${stop})` : ""}. It'll try again on your next stumble.`);
   return sites;
 }
 
@@ -162,20 +203,21 @@ function refill() {
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
   refilling = (async () => {
     const st = await load();
-    if (!st.apiKey || !st.interests.length) return;
+    if (!aiOn(st) || !st.interests.length) return;
     try {
-      const arr = await askClaude(st);
+      const arr = await askAI(st);
       // merge against the latest state, since stumbles may have happened meanwhile
       const now = await load();
       const all = [...CATS, ...now.custom];
       const taken = new Set([...now.seen, ...now.queue.map(q => norm(q.url))]);
+      const hostsTaken = new Set([...seenHosts(now, 300), ...now.queue.map(q => hostOf(q.url))]);
       const dead = new Set(now.dead);
       const fresh = [];
       for (const s of arr) {
         if (!s || typeof s.url !== "string" || !/^https?:\/\/\S+\.\S+/.test(s.url)) continue;
         const k = norm(s.url);
-        if (taken.has(k) || dead.has(hostOf(s.url))) continue;
-        taken.add(k);
+        if (taken.has(k) || hostsTaken.has(hostOf(s.url)) || dead.has(hostOf(s.url))) continue;
+        taken.add(k); hostsTaken.add(hostOf(s.url));
         const cat = all.find(c => c.toLowerCase() === String(s.interest || "").toLowerCase()) || "Wildcard";
         fresh.push({ cat, icon: String(s.emoji || "✨").slice(0, 4), title: String(s.title || hostOf(s.url)).slice(0, 80), url: s.url, blurb: String(s.blurb || "").slice(0, 200), kind: KINDS.includes(s.kind) ? s.kind : "" });
       }
@@ -190,11 +232,14 @@ function refill() {
 }
 
 function pickNext(st) {
-  const lib = libraryFresh(st);
+  const recentHosts = seenHosts(st, 30);
+  const notRecent = list => { const f = list.filter(q => !recentHosts.has(hostOf(q.url))); return f.length ? f : list; };
+  const lib = notRecent(libraryFresh(st));
+  const pool = notRecent(st.queue);
   const itemW = q => catW(st, q.cat) * kindW(st, q.kind);
-  if (st.queue.length && (!lib.length || Math.random() < 0.8)) {
-    const i = weightedIndex(st.queue, itemW);
-    return { pick: st.queue[i], index: i };
+  if (pool.length && (!lib.length || Math.random() < 0.8)) {
+    const pick = pool[weightedIndex(pool, itemW)];
+    return { pick, index: st.queue.indexOf(pick) };
   }
   if (lib.length) return { pick: lib[weightedIndex(lib, itemW)], index: -1 };
   return { pick: null };
@@ -203,16 +248,16 @@ function pickNext(st) {
 // After 3 ratings, fetch a fresh batch early (if the queue isn't already big) so new taste shows up sooner.
 async function maybeRefreshEarly() {
   const st = await load();
-  if (st.apiKey && st.ratedSinceRefill >= 3 && st.queue.length < 25) refill();
+  if (aiOn(st) && st.ratedSinceRefill >= 3 && st.queue.length < 25) refill();
 }
 
 async function stumble(tabId) {
   let st = await load();
   if (!st.interests.length) return { error: "Pick at least one interest in settings." };
   let { pick, index } = pickNext(st);
-  if (!pick && st.apiKey) { await refill(); st = await load(); ({ pick, index } = pickNext(st)); }
+  if (!pick && aiOn(st)) { await refill(); st = await load(); ({ pick, index } = pickNext(st)); }
   if (!pick) {
-    return { error: st.apiKey ? (st.lastError || "Couldn't find new sites right now. Try again in a moment.") : "You've seen every built-in site for these interests. Add a Claude API key in settings for endless stumbling." };
+    return { error: aiOn(st) ? (st.lastError || "Couldn't find new sites right now. Try again in a moment.") : "You've seen every built-in site for these interests. Add an AI API key in settings for endless stumbling." };
   }
   const todayKey = new Date().toDateString();
   const today = st.today.date === todayKey ? { date: todayKey, n: st.today.n + 1 } : { date: todayKey, n: 1 };
@@ -225,7 +270,7 @@ async function stumble(tabId) {
   const { tabs = {} } = await chrome.storage.local.get("tabs");
   tabs[tab.id] = pick;
   await chrome.storage.local.set({ tabs });
-  if (queue.length < 10 && st.apiKey) refill();
+  if (queue.length < 10 && aiOn(st)) refill();
   return { current: pick };
 }
 
@@ -278,7 +323,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       case "barState": {
         const { barCollapsed = false } = await chrome.storage.local.get("barCollapsed");
         const liked = !!cur && st.saved.some(s => norm(s.url) === norm(cur.url));
-        return { current: cur, liked, collapsed: barCollapsed, error: st.lastError, hasKey: !!st.apiKey, left: st.queue.length };
+        return { current: cur, liked, collapsed: barCollapsed, error: st.lastError, hasKey: aiOn(st), left: st.queue.length };
       }
       case "like": {
         if (!cur) return {};
@@ -318,20 +363,16 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       case "options": chrome.runtime.openOptionsPage(); return {};
       case "interestsChanged":
         await save({ queue: st.queue.filter(q => q.cat === "Wildcard" || st.interests.includes(q.cat)) });
-        if (st.apiKey && st.queue.length < 10) refill();
+        if (aiOn(st) && st.queue.length < 10) refill();
         return {};
       case "refill": refill(); return {};
       case "testKey": {
         // A tiny real request, so settings can show exactly what the API says.
         try {
-          const r = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: { "content-type": "application/json", "x-api-key": String(st.apiKey).replace(/[^\x21-\x7E]/g, ""), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-            body: JSON.stringify({ model: st.model || DEFAULTS.model, max_tokens: 5, messages: [{ role: "user", content: "Say hi" }] })
-          });
+          const r = await aiFetch(st, "Say hi", { maxTokens: 16, stream: false });
           if (r.ok) return { ok: true };
           const b = await r.json().catch(() => ({}));
-          return { ok: false, error: `${r.status}: ${b?.error?.message || r.statusText}` };
+          return { ok: false, error: `${r.status}: ${errMsg(b) || r.statusText}` };
         } catch (e) { return { ok: false, error: `Couldn't connect: ${e.message}` }; }
       }
     }
