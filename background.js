@@ -1,9 +1,9 @@
-importScripts("sites.js", "providers.js");
+importScripts("sites.js", "providers.js", "langs.js");
 
 const CATS = Object.keys(SITES);
 const DEFAULTS = {
   interests: CATS, custom: [], seen: [], saved: [], skipped: [], dead: [], queue: [],
-  current: null, apiKey: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
+  current: null, apiKey: "", lang: "", family: false, provider: "anthropic", baseUrl: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
   taste: { cats: {}, kinds: {} }, ratedSinceRefill: 0
 };
 const norm = u => { try { const x = new URL(u); return (x.hostname.replace(/^www\./, "") + x.pathname.replace(/\/+$/, "") + x.search).toLowerCase(); } catch (e) { return String(u).toLowerCase(); } };
@@ -63,7 +63,7 @@ const LIBRARY_HOSTS = [...new Set(Object.values(SITES).flatMap(([, list]) => lis
 
 // Each batch leans a few random ways, so the AI doesn't keep reaching for the same famous picks.
 const ANGLES = [
-  "made by a single person as a labor of love", "from outside the English-speaking world (still usable in English)",
+  "made by a single person as a labor of love", "from a part of the world they probably haven't explored online",
   "from the early web, before 2010, and still online", "a university, library, or museum project most people never find",
   "built around one very specific hobby or obsession", "a tool or toy that does exactly one thing well",
   "a collection or archive someone has been building for years", "small and recent, made in the last few years",
@@ -72,9 +72,20 @@ const ANGLES = [
 ];
 const pickAngles = n => [...ANGLES].sort(() => Math.random() - 0.5).slice(0, n);
 
+/* ---- family-safe mode ---- */
+// A backstop for anything the AI labels "all ages" by mistake. Blunt on purpose: a false alarm only skips one site.
+const GROWN_UP = /\b(porn\w*|xxx|nsfw|sex\w*|nude|nudity|naked|erotic\w*|escorts?|onlyfans|casinos?|gambl\w*|betting|poker|slot machines?|lottery|vap(e|es|ing)|cannabis|marijuana|weed|cigar\w*|tobacco|beers?|wines?|winery|cocktails?|whiske?y|vodka|liquor|booze|brewer(y|ies)|drunk\w*|dating|hookups?|gore|horror|creepypasta|murder\w*|serial killers?|torture)\b/i;
+const kidSafe = q => q.audience === "all ages" && !GROWN_UP.test(`${q.title} ${q.blurb} ${q.url}`);
+// The queued sites Stumble may actually show right now.
+const usable = (st, queue = st.queue) => st.family ? queue.filter(kidSafe) : queue;
+
+function familyNote(st) {
+  return st.family ? `This is for a child or a family, so every site must be fine for ages 8 and up: no sexual content or nudity, no gore or graphic violence, nothing frightening, no gambling, no alcohol, drugs or tobacco, no dating, no strong language, no shopping, and no chat rooms, forums or social sites where strangers can message them. Leave out open-ended archives or random-page pickers that could land anywhere. When unsure, leave it out.\n` : "";
+}
+
 function libraryFresh(st) {
   const seen = new Set(st.seen), out = [];
-  st.interests.forEach(c => { if (SITES[c]) SITES[c][1].forEach(s => { if (!seen.has(norm(s[1]))) out.push({ cat: c, icon: SITES[c][0], title: s[0], url: s[1], blurb: s[2] }); }); });
+  st.interests.forEach(c => { if (SITES[c]) SITES[c][1].forEach(s => { if (!seen.has(norm(s[1])) && !(st.family && NOT_FOR_KIDS.has(s[1]))) out.push({ cat: c, icon: SITES[c][0], title: s[0], url: s[1], blurb: s[2] }); }); });
   return out;
 }
 
@@ -83,6 +94,12 @@ function kindNote(st) {
   const more = ranked.filter(([, w]) => w >= 1.5).map(([k]) => k);
   const less = ranked.filter(([, w]) => w <= 0.6).map(([k]) => k);
   return (more.length ? `\nKinds of site they respond to: ${more.join(", ")}.` : "") + (less.length ? `\nKinds of site they tend to skip, so fewer of these: ${less.join(", ")}.` : "");
+}
+
+// Steer most of the batch toward their language without ruling the rest of the web out.
+function langNote(st) {
+  const name = LANGS[st.lang];
+  return name ? `They prefer sites in ${name}. Make about 85% of the batch sites whose main language is ${name}, or that need no reading (music, maps, toys, art). The rest can be in any language, if they're worth it.\n` : "";
 }
 
 function buildPrompt(st) {
@@ -95,14 +112,14 @@ Their interests: ${st.interests.join(", ")}.
 Aim for roughly this share of the batch per interest, based on what they've been liking and skipping: ${shares(st).map(([c, p]) => `${c} ${p}%`).join(", ")}. Wildcard means anything at all outside their interests, to widen their world. Spread things out rather than bunching.${kindNote(st)}
 
 Aim for the delightful long tail of the web: personal sites, niche blogs, single-purpose interactive toys, digital archives and museum collections, fan-made databases, generators, web art, hobbyist reference sites, small magazines, odd one-page projects, beautiful essays. Vary the kind of site as much as the topic. For this batch, lean toward sites that are: ${pickAngles(3).join("; ")}.
-Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
+${langNote(st)}${familyNote(st)}Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
 Only include sites you are confident exist and are still online. Prefer a homepage or a long-stable URL over a deep link. Every entry must be a different site.
 ${liked.length ? `\nThey loved these, so more in this spirit is welcome: ${liked.join("; ")}.` : ""}${nope.length ? `\nThey marked these "not for me", so steer away from similar: ${nope.join("; ")}.` : ""}${st.dead.length ? `\nThese sites turned out to be dead, avoid them: ${st.dead.slice(-40).join(", ")}.` : ""}
 
 They have already seen these websites, so suggest nothing on them, not even a different page: ${shown.join(", ")}
 
 Reply with only a JSON array of 25 objects, no other text:
-[{"title":"Site name","url":"https://...","interest":"one of their interests, exactly as written, or Wildcard","kind":"one of: ${KINDS.join(" | ")}","emoji":"one emoji","blurb":"One plain sentence under 20 words saying what it is."}]`;
+[{"title":"Site name","url":"https://...","interest":"one of their interests, exactly as written, or Wildcard","kind":"one of: ${KINDS.join(" | ")}","audience":"all ages, teens, or adults: who the site is suitable for, judged honestly","lang":"the site's main language as a 2-letter code, or none if it needs no reading","emoji":"one emoji","blurb":"One plain sentence under 20 words saying what it is."}]`;
 }
 
 // Pull every complete {...} object out of the AI's reply, even if the array got cut off.
@@ -202,6 +219,20 @@ async function askAI(st) {
   return sites;
 }
 
+// Does this page actually load? "gone" means the site itself didn't answer (no such domain, refused, bad
+// certificate, or too slow); "missing" means the site answered but this page isn't there.
+async function reachable(url) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(url, { signal: ctl.signal, credentials: "omit", cache: "no-store" });
+    return r.status === 404 || r.status === 410 ? "missing" : "ok";   // 403s are usually bot checks a real visit passes
+  } catch (e) {
+    return "gone";
+  } finally {
+    clearTimeout(timer); ctl.abort();   // only the headers matter, so stop the download
+  }
+}
+
 function refill() {
   if (refilling) return refilling;
   // Ping a Chrome API every 20s so the background worker isn't put to sleep mid-request.
@@ -210,7 +241,11 @@ function refill() {
     const st = await load();
     if (!aiOn(st) || !st.interests.length) return;
     try {
-      const arr = await askAI(st);
+      const arr = (await askAI(st)).filter(s => s && typeof s.url === "string" && /^https?:\/\/\S+\.\S+/.test(s.url));
+      // AI models sometimes suggest sites that are gone or never existed, so check each one loads before queuing it.
+      const status = await Promise.all(arr.map(s => reachable(s.url)));
+      if (arr.length && !status.includes("ok")) throw new Error("Couldn't reach any of the new sites. Check your internet connection.");
+      const gone = arr.filter((_, i) => status[i] === "gone").map(s => hostOf(s.url));
       // merge against the latest state, since stumbles may have happened meanwhile
       const now = await load();
       const all = [...CATS, ...now.custom];
@@ -218,17 +253,18 @@ function refill() {
       const hostsTaken = new Set([...seenHosts(now, 300), ...now.queue.map(q => hostOf(q.url))]);
       const dead = new Set(now.dead);
       const fresh = [];
-      for (const s of arr) {
-        if (!s || typeof s.url !== "string" || !/^https?:\/\/\S+\.\S+/.test(s.url)) continue;
+      for (const [i, s] of arr.entries()) {
+        if (status[i] !== "ok") continue;
         const k = norm(s.url);
         if (taken.has(k) || hostsTaken.has(hostOf(s.url)) || dead.has(hostOf(s.url))) continue;
         taken.add(k); hostsTaken.add(hostOf(s.url));
         const cat = all.find(c => c.toLowerCase() === String(s.interest || "").toLowerCase()) || "Wildcard";
-        fresh.push({ cat, icon: String(s.emoji || "✨").slice(0, 4), title: String(s.title || hostOf(s.url)).slice(0, 80), url: s.url, blurb: String(s.blurb || "").slice(0, 200), kind: KINDS.includes(s.kind) ? s.kind : "" });
+        fresh.push({ cat, icon: String(s.emoji || "✨").slice(0, 4), title: String(s.title || hostOf(s.url)).slice(0, 80), url: s.url, blurb: String(s.blurb || "").slice(0, 200), kind: KINDS.includes(s.kind) ? s.kind : "", lang: /^([a-z]{2}|none)$/.test(s.lang) ? s.lang : "", audience: String(s.audience || "").toLowerCase().trim() });
+        if (now.family && !kidSafe(fresh[fresh.length - 1])) fresh.pop();
       }
       const queue = now.queue.concat(fresh);
       for (let i = queue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
-      await save({ queue, lastError: "", ratedSinceRefill: 0 });
+      await save({ queue, dead: now.dead.concat(gone).slice(-300), lastError: "", ratedSinceRefill: 0 });
     } catch (e) {
       await save({ lastError: e.message || String(e) });
     }
@@ -236,13 +272,19 @@ function refill() {
   return refilling;
 }
 
+// Sites in other languages still turn up, just much less often. Unlabeled or wordless sites count as a match.
+const langW = (st, q) => !st.lang || !q.lang || q.lang === "none" || q.lang === st.lang ? 1 : 0.15;
+const langMatches = st => usable(st).filter(q => langW(st, q) === 1).length;
+
 function pickNext(st) {
   const recentHosts = seenHosts(st, 30);
   const notRecent = list => { const f = list.filter(q => !recentHosts.has(hostOf(q.url))); return f.length ? f : list; };
   const lib = notRecent(libraryFresh(st));
-  const pool = notRecent(st.queue);
-  const itemW = q => catW(st, q.cat) * kindW(st, q.kind);
-  if (pool.length && (!lib.length || Math.random() < 0.8)) {
+  const pool = notRecent(usable(st));
+  const itemW = q => catW(st, q.cat) * kindW(st, q.kind) * langW(st, q);
+  // The built-in list is mostly English, so dip into it less when they prefer another language.
+  const libShare = st.lang && st.lang !== "en" ? 0.05 : 0.2;
+  if (pool.length && (!lib.length || Math.random() >= libShare)) {
     const pick = pool[weightedIndex(pool, itemW)];
     return { pick, index: st.queue.indexOf(pick) };
   }
@@ -253,7 +295,7 @@ function pickNext(st) {
 // After 3 ratings, fetch a fresh batch early (if the queue isn't already big) so new taste shows up sooner.
 async function maybeRefreshEarly() {
   const st = await load();
-  if (aiOn(st) && st.ratedSinceRefill >= 3 && st.queue.length < 25) refill();
+  if (aiOn(st) && st.ratedSinceRefill >= 3 && usable(st).length < 25) refill();
 }
 
 async function stumble(tabId) {
@@ -275,7 +317,8 @@ async function stumble(tabId) {
   const { tabs = {} } = await chrome.storage.local.get("tabs");
   tabs[tab.id] = pick;
   await chrome.storage.local.set({ tabs });
-  if (queue.length < 10 && aiOn(st)) refill();
+  landing.set(tab.id, Date.now());
+  if (usable(st, queue).length < 10 && aiOn(st)) refill();
   return { current: pick };
 }
 
@@ -317,6 +360,28 @@ chrome.webNavigation.onDOMContentLoaded.addListener(async ({ tabId, frameId }) =
   chrome.scripting.executeScript({ target: { tabId }, files: ["toolbar.js"] }).catch(() => {});
 });
 chrome.tabs.onRemoved.addListener(forgetTab);
+
+// If a site we just sent someone to won't load, Chrome shows an error page the toolbar can't appear on.
+// Mark the site dead and move on, up to 3 times in a row so a bad connection can't loop forever.
+const landing = new Map();   // tabId -> when we sent it to a site that hasn't finished loading yet
+const autoSkips = new Map();
+const OFFLINE = /ERR_(ABORTED|INTERNET_DISCONNECTED|NETWORK_CHANGED|NETWORK_IO_SUSPENDED|PROXY_CONNECTION_FAILED|BLOCKED_BY_CLIENT)/;
+chrome.webNavigation.onCompleted.addListener(({ tabId, frameId }) => {
+  if (frameId === 0) { landing.delete(tabId); autoSkips.delete(tabId); }
+});
+chrome.webNavigation.onErrorOccurred.addListener(async ({ tabId, frameId, url, error }) => {
+  if (frameId !== 0 || !landing.has(tabId)) return;
+  const fresh = Date.now() - landing.get(tabId) < 60000;
+  landing.delete(tabId);
+  if (!fresh || OFFLINE.test(error)) return;
+  const cur = await tabCurrent(tabId);
+  if (!cur) return;
+  const st = await load();
+  await save({ dead: st.dead.concat(hostOf(cur.url), hostOf(url)).filter((h, i, a) => a.indexOf(h) === i).slice(-300) });
+  const n = (autoSkips.get(tabId) || 0) + 1;
+  autoSkips.set(tabId, n);
+  if (n <= 3) stumbleWithFeedback(tabId);
+});
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   (async () => {
@@ -361,14 +426,21 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       }
       case "resetTaste": await save({ taste: { cats: {}, kinds: {} } }); return {};
       case "dead":
-        if (cur) await save({ dead: st.dead.concat(hostOf(cur.url)).slice(-100), saved: st.saved.filter(s => norm(s.url) !== norm(cur.url)) });
+        if (cur) await save({ dead: st.dead.concat(hostOf(cur.url)).slice(-300), saved: st.saved.filter(s => norm(s.url) !== norm(cur.url)) });
         return stumble(tabId);
       case "collapse": await save({ barCollapsed: !!msg.value }); return {};
       case "close": await forgetTab(tabId); return {};
       case "options": chrome.runtime.openOptionsPage(); return {};
+      case "familyChanged":
+        if (aiOn(st) && usable(st).length < 10) refill();
+        return {};
+      case "langChanged":
+        // Fetch a batch in the new language now if the queue has few sites in it.
+        if (aiOn(st) && langMatches(st) < 10) refill();
+        return {};
       case "interestsChanged":
         await save({ queue: st.queue.filter(q => q.cat === "Wildcard" || st.interests.includes(q.cat)) });
-        if (aiOn(st) && st.queue.length < 10) refill();
+        if (aiOn(st) && usable(st).length < 10) refill();
         return {};
       case "refill": refill(); return {};
       case "testKey": {
@@ -390,6 +462,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "install") { await save({ knownCats: CATS }); chrome.runtime.openOptionsPage(); }
   // After an update, put fresh toolbars back on tabs that were stumbling.
   if (reason === "update") {
+    // An error saved by the old version may already be fixed; let the new version report its own.
+    await save({ lastError: "" });
     // Switch on interests added since the last version, so updating users see them.
     const { interests, knownCats = CATS.filter(c => c !== "Words & language" && c !== "History") } = await chrome.storage.local.get(["interests", "knownCats"]);
     const added = CATS.filter(c => !knownCats.includes(c));

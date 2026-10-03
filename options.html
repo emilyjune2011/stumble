@@ -20,6 +20,9 @@ h2{font-weight:600;font-size:1.2rem;margin:34px 0 10px}
 .meter span{position:absolute;top:0;bottom:0;border-radius:4px}
 .lean{font-size:.85rem;color:var(--soft);text-align:right}
 .sub{font-weight:600;margin:16px 0 4px;color:var(--soft);font-size:.9rem}
+[hidden]{display:none!important}
+.check{display:flex;gap:10px;align-items:center;font-weight:600;margin:10px 0}
+.check input{width:18px;height:18px;accent-color:var(--rose)}
 kbd{border:1.5px solid var(--line);border-radius:6px;padding:1px 6px;font:inherit;font-size:.9rem}
 </style></head>
 <body><main>
@@ -33,6 +36,27 @@ kbd{border:1.5px solid var(--line);border-radius:6px;padding:1px 6px;font:inheri
     <button class="btn" id="addBtn" type="button">Add</button>
   </div>
   <button class="link" id="toggleAll" type="button">Select all</button>
+
+  <h2 class="serif">Language</h2>
+  <p class="help">Stumble will mostly show sites in your language, or ones that need no reading. Sites in other languages still turn up now and then. Works best with an AI key, since the built-in list is mostly in English.</p>
+  <div class="field">
+    <label for="lang">Preferred language</label>
+    <select id="lang"><option value="">No preference</option></select>
+  </div>
+
+  <h2 class="serif">Family-safe mode</h2>
+  <p class="help">Only shows sites suitable for ages 8 and up: no adult content, violence, gambling, alcohol, or places where strangers can chat. A PIN stops anyone else from turning it off or changing the AI settings.</p>
+  <label class="check"><input type="checkbox" id="family"> Only show family-safe sites</label>
+  <div class="field">
+    <label for="pin">Parental PIN (optional)</label>
+    <div class="add">
+      <input id="pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="12" placeholder="4 to 12 digits">
+      <button class="btn" id="setPin" type="button">Set PIN</button>
+    </div>
+  </div>
+  <button class="link" id="removePin" type="button" hidden>Remove PIN</button>
+  <p class="note" id="familyNote"></p>
+  <p class="help">Good to know: this only controls the sites Stumble sends you to. It can't stop browsing elsewhere, and anyone who can open chrome://extensions can switch Stumble off. For full protection, also use your browser's or device's parental controls.</p>
 
   <h2 class="serif">Endless stumbling</h2>
   <p class="help">Without a key, Stumble uses its built-in list of about 180 sites. With an AI API key, it keeps finding new ones in batches of 25, shaped by what you like and skip. <span id="getKey"></span>Usage is billed to your API account, and the key stays on this computer.</p>
@@ -76,5 +100,6 @@ kbd{border:1.5px solid var(--line);border-radius:6px;padding:1px 6px;font:inheri
   <button class="btn" id="clear" type="button">Clear history</button>
   <script src="sites.js"></script>
   <script src="providers.js"></script>
+  <script src="langs.js"></script>
   <script src="options.js"></script>
 </main></body></html>

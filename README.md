@@ -12,11 +12,23 @@ Click the **Stumble** button in your toolbar, or press <kbd>Alt</kbd>+<kbd>Shift
 - **⚙** opens your interests and settings
 - **▴** shrinks the bar to a small pill, **✕** stops stumbling in that tab
 
-Stumble never shows the same site twice, until you clear your history.
+Stumble never shows the same site twice, until you clear your history. New sites from the AI are checked to make sure they load before they're queued, and if a site won't load when you land on it, Stumble marks it dead and skips ahead on its own.
 
 ## Interests
 
 Choose from Weird & wonderful, Music, Film & TV, Art & design, Science & space, Nostalgia, Travel & places, Food, Games & play, Reading & ideas, Nature & calm, Words & language, and History, or add your own (brutalism, synths, anything). A few wildcards are mixed in so you still get surprised.
+
+## Language
+
+Pick a preferred language in settings and Stumble will mostly show sites in that language, or ones that need no reading (music, maps, toys, art). It filters rather than blocks: sites in other languages still turn up now and then. This works best with an AI key, since the built-in list is mostly in English.
+
+## Family-safe mode
+
+Turn on **Family-safe mode** in settings and Stumble only shows sites suitable for ages 8 and up: no adult content, violence, gambling, alcohol, or places where strangers can chat. Built-in sites that don't fit are skipped, the AI is told the rules and has to label every site's audience, and anything not labeled "all ages" (or that trips a list of grown-up words) is blocked, not just shown less often.
+
+Set a **parental PIN** to lock it: turning family-safe mode off, changing the PIN, or changing the AI settings then asks for it.
+
+It has limits: it only controls the sites Stumble sends you to, not the rest of the browser, and anyone who can open `chrome://extensions` can switch Stumble off. AI labels can be wrong, too. Use it alongside your browser's or device's own parental controls.
 
 ## Endless stumbling (optional)
 
@@ -61,6 +73,7 @@ To change the keyboard shortcut, go to `chrome://extensions/shortcuts`.
 | `manifest.json` | Extension config (Manifest V3) |
 | `background.js` | Picks sites, learns your taste, and asks the AI for new ones |
 | `providers.js` | The AI providers Stumble can use |
+| `langs.js` | The languages you can prefer |
 | `sites.js` | The built-in list of sites by interest |
 | `toolbar.js` | The bar injected at the top of pages |
 | `options.html`, `options.js` | The settings page |

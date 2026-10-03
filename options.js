@@ -3,7 +3,7 @@ const CATS = Object.keys(SITES);
 let st = {};
 
 async function load() {
-  st = Object.assign({ interests: CATS, custom: [], saved: [], apiKey: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5" }, await chrome.storage.local.get(null));
+  st = Object.assign({ interests: CATS, custom: [], saved: [], apiKey: "", lang: "", family: false, familyPin: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5" }, await chrome.storage.local.get(null));
 }
 const allCats = () => [...CATS, ...st.custom];
 async function saveInterests() {
@@ -57,6 +57,7 @@ function renderProvider(keepModel) {
 $("provider").onchange = () => renderProvider(false);
 
 $("saveKey").onclick = async () => {
+  if (st.family && !(await unlocked("change the AI settings"))) return;
   const apiKey = cleanKey($("key").value), provider = $("provider").value, model = $("model").value.trim(), baseUrl = $("baseUrl").value.trim();
   if (provider === "custom" && baseUrl && !/^https?:\/\//i.test(baseUrl)) { $("note").textContent = "The base URL should start with https:// (or http:// for a service on your computer)."; return; }
   if ((apiKey || baseUrl) && !model) { $("note").textContent = "Enter a model name."; return; }
@@ -66,6 +67,61 @@ $("saveKey").onclick = async () => {
   const r = await chrome.runtime.sendMessage({ type: "testKey" });
   if (r && r.ok) { $("note").textContent = "Key works. Finding your first batch of sites now."; chrome.runtime.sendMessage({ type: "refill" }); }
   else $("note").textContent = "The API said: " + (r && r.error || "no response");
+};
+
+Object.entries(LANGS).sort((a, b) => a[1].localeCompare(b[1])).forEach(([code, name]) => $("lang").appendChild(new Option(name, code)));
+$("lang").onchange = async () => {
+  await chrome.storage.local.set({ lang: $("lang").value });
+  chrome.runtime.sendMessage({ type: "langChanged" });
+};
+
+/* ---- family-safe mode ---- */
+// The PIN is stored only as a hash, so it can't be read back out of settings.
+async function hashPin(pin) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("stumble-pin:" + pin));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+// With no PIN set, everything is open. With one, ask for it before protected changes.
+async function unlocked(action) {
+  if (!st.familyPin) return true;
+  const pin = prompt(`Enter the parental PIN to ${action}.`);
+  if (pin === null) return false;
+  if (await hashPin(pin.trim()) === st.familyPin) return true;
+  alert("That PIN isn't right.");
+  return false;
+}
+function renderFamily() {
+  $("family").checked = !!st.family;
+  $("setPin").textContent = st.familyPin ? "Change PIN" : "Set PIN";
+  $("removePin").hidden = !st.familyPin;
+}
+async function setFamily(on) {
+  st.family = on;
+  await chrome.storage.local.set({ family: on });
+  chrome.runtime.sendMessage({ type: "familyChanged" });
+  renderFamily();
+}
+$("family").onchange = async () => {
+  if (!$("family").checked && !(await unlocked("turn off family-safe mode"))) { $("family").checked = true; return; }
+  await setFamily($("family").checked);
+  $("familyNote").textContent = st.family ? "Family-safe mode is on." : "Family-safe mode is off.";
+};
+$("setPin").onclick = async () => {
+  const pin = $("pin").value.trim();
+  if (!/^\d{4,12}$/.test(pin)) { $("familyNote").textContent = "Use 4 to 12 digits for the PIN."; return; }
+  if (!(await unlocked("change the PIN"))) return;
+  st.familyPin = await hashPin(pin);
+  await chrome.storage.local.set({ familyPin: st.familyPin });
+  $("pin").value = "";
+  await setFamily(true);   // a PIN only makes sense with the protection on
+  $("familyNote").textContent = "PIN set. Family-safe mode is on and locked.";
+};
+$("removePin").onclick = async () => {
+  if (!(await unlocked("remove the PIN"))) return;
+  st.familyPin = "";
+  await chrome.storage.local.set({ familyPin: "" });
+  renderFamily();
+  $("familyNote").textContent = "PIN removed.";
 };
 
 function renderSaved() {
@@ -119,4 +175,4 @@ $("resetTaste").onclick = async () => {
 };
 
 chrome.storage.onChanged.addListener(async (ch) => { if (ch.saved || ch.taste) { await load(); renderSaved(); renderTaste(); } });
-(async () => { await load(); $("key").value = st.apiKey; $("provider").value = PROVIDERS[st.provider] ? st.provider : "anthropic"; $("baseUrl").value = st.baseUrl; $("model").value = st.model; renderProvider(true); renderChips(); renderSaved(); renderTaste(); })();
+(async () => { await load(); $("lang").value = LANGS[st.lang] ? st.lang : ""; $("key").value = st.apiKey; $("provider").value = PROVIDERS[st.provider] ? st.provider : "anthropic"; $("baseUrl").value = st.baseUrl; $("model").value = st.model; renderProvider(true); renderFamily(); renderChips(); renderSaved(); renderTaste(); })();
