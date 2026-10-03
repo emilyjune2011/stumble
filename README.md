@@ -43,7 +43,7 @@ Out of the box, Stumble draws from a built-in list of about 180 hand-picked site
 
 You can type any model name your account can use. For **Other**, enter the service's base URL (for example `https://openrouter.ai/api/v1` or `http://localhost:11434/v1`). A key is optional there, since local models usually don't need one.
 
-Stumble also avoids showing pages from the same website close together: a site you saw in your last 30 stumbles is skipped, and the AI is told not to suggest any page on sites you have already seen. Each batch it asks the AI for leans a few random directions (one-person passion projects, the early web, museum archives, sites from outside the English-speaking world…) so you keep landing somewhere new.
+Stumble also avoids showing pages from the same website close together: a site you saw in your last 30 stumbles is skipped, and the AI is told not to suggest any page on sites you have already seen. Each batch asks for a set mix of kinds of site (mostly toys, games, tools, art, maps, live cams, audio and archives, with only a couple of blogs or essays unless you keep liking them), Stumble trims anything the AI over-delivers, and it avoids showing the same kind of site back to back. Each batch also leans a few random directions (one-person passion projects, the early web, museum archives, sites from outside the English-speaking world…) so you keep landing somewhere new.
 
 ### Privacy and cost
 

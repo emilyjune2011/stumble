@@ -63,11 +63,11 @@ const LIBRARY_HOSTS = [...new Set(Object.values(SITES).flatMap(([, list]) => lis
 
 // Each batch leans a few random ways, so the AI doesn't keep reaching for the same famous picks.
 const ANGLES = [
-  "made by a single person as a labor of love", "from a part of the world they probably haven't explored online",
+  "made by a single person as a labor of love (but not a blog)", "from a part of the world they probably haven't explored online",
   "from the early web, before 2010, and still online", "a university, library, or museum project most people never find",
   "built around one very specific hobby or obsession", "a tool or toy that does exactly one thing well",
-  "a collection or archive someone has been building for years", "small and recent, made in the last few years",
-  "a personal site with a strong visual style", "something you can listen to", "a long, beautiful piece of writing",
+  "a collection or archive someone has been building for years", "small and recent, made in the last few years", "a browser game you can finish in ten minutes", "a live view of somewhere in the world",
+  "something with a strong visual style", "something you can listen to", "something you can make or build with",
   "a map, atlas, or explorable place", "a database of something oddly specific", "made by an artist, designer, or musician"
 ];
 const pickAngles = n => [...ANGLES].sort(() => Math.random() - 0.5).slice(0, n);
@@ -89,11 +89,33 @@ function libraryFresh(st) {
   return out;
 }
 
+/* ---- variety: how many of each kind of site to ask for ---- */
+// Left alone, AI models fill a "long tail of the web" batch with blogs and essays, the easiest obscure
+// sites to recall. So each batch asks for an explicit mix, leaning toward things you can do, see, or hear.
+const KIND_BASE = {
+  "interactive toy": 3, "game": 2.5, "tool": 2.5, "web art": 2, "live cam or map": 2, "audio or radio": 2,
+  "archive or collection": 2, "reference or database": 2, "video or film": 1.5, "shop or maker": 1,
+  "other": 1.5, "essay or article": 1, "blog": 0.75
+};
+const WORDY = new Set(["essay or article", "blog"]);
+// Reading-heavy kinds get at most 2 slots each, or 4 if they're clearly liked.
+const kindCap = (st, k) => WORDY.has(k) ? (kindW(st, k) >= 1.5 ? 4 : 2) : 8;
+function kindMix(st, total = 25) {
+  const ws = Object.entries(KIND_BASE).map(([k, b]) => [k, b * kindW(st, k)]);
+  const sum = ws.reduce((a, [, w]) => a + w, 0);
+  const mix = ws.map(([k, w]) => { const exact = total * w / sum; return { k, n: Math.min(kindCap(st, k), Math.floor(exact)), rem: exact % 1 }; });
+  // hand out the leftover slots by largest remainder, skipping kinds already at their cap
+  for (let left = total - mix.reduce((a, m) => a + m.n, 0); left > 0; left--) {
+    const m = mix.filter(m => m.n < kindCap(st, m.k)).sort((a, b) => b.rem - a.rem)[0];
+    if (!m) break;
+    m.n++; m.rem = -1;
+  }
+  return Object.fromEntries(mix.filter(m => m.n > 0).map(m => [m.k, m.n]));
+}
+
 function kindNote(st) {
-  const ranked = Object.entries(st.taste.kinds).filter(([, t]) => t.up + t.down >= 2).map(([k, t]) => [k, weight(t)]);
-  const more = ranked.filter(([, w]) => w >= 1.5).map(([k]) => k);
-  const less = ranked.filter(([, w]) => w <= 0.6).map(([k]) => k);
-  return (more.length ? `\nKinds of site they respond to: ${more.join(", ")}.` : "") + (less.length ? `\nKinds of site they tend to skip, so fewer of these: ${less.join(", ")}.` : "");
+  const mix = kindMix(st);
+  return `\nMake the batch this mix of kinds of site: ${Object.entries(mix).map(([k, n]) => `${n} ${k}`).join(", ")}. Label each with the kind it really is; if a site is mostly something to read, it counts as a blog or essay.`;
 }
 
 // Steer most of the batch toward their language without ruling the rest of the web out.
@@ -111,7 +133,7 @@ function buildPrompt(st) {
 Their interests: ${st.interests.join(", ")}.
 Aim for roughly this share of the batch per interest, based on what they've been liking and skipping: ${shares(st).map(([c, p]) => `${c} ${p}%`).join(", ")}. Wildcard means anything at all outside their interests, to widen their world. Spread things out rather than bunching.${kindNote(st)}
 
-Aim for the delightful long tail of the web: personal sites, niche blogs, single-purpose interactive toys, digital archives and museum collections, fan-made databases, generators, web art, hobbyist reference sites, small magazines, odd one-page projects, beautiful essays. Vary the kind of site as much as the topic. For this batch, lean toward sites that are: ${pickAngles(3).join("; ")}.
+Aim for the delightful long tail of the web: single-purpose interactive toys, generators, browser games, handy little tools, web art, live cams and explorable maps, radio and sound sites, digital archives and museum collections, fan-made databases, hobbyist reference sites, odd one-page projects. Vary the kind of site as much as the topic: someone clicking through should do, see, and hear things, not just read. For this batch, lean toward sites that are: ${pickAngles(3).join("; ")}.
 ${langNote(st)}${familyNote(st)}Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
 Only include sites you are confident exist and are still online. Prefer a homepage or a long-stable URL over a deep link. Every entry must be a different site.
 ${liked.length ? `\nThey loved these, so more in this spirit is welcome: ${liked.join("; ")}.` : ""}${nope.length ? `\nThey marked these "not for me", so steer away from similar: ${nope.join("; ")}.` : ""}${st.dead.length ? `\nThese sites turned out to be dead, avoid them: ${st.dead.slice(-40).join(", ")}.` : ""}
@@ -262,7 +284,10 @@ function refill() {
         fresh.push({ cat, icon: String(s.emoji || "✨").slice(0, 4), title: String(s.title || hostOf(s.url)).slice(0, 80), url: s.url, blurb: String(s.blurb || "").slice(0, 200), kind: KINDS.includes(s.kind) ? s.kind : "", lang: /^([a-z]{2}|none)$/.test(s.lang) ? s.lang : "", audience: String(s.audience || "").toLowerCase().trim() });
         if (now.family && !kidSafe(fresh[fresh.length - 1])) fresh.pop();
       }
-      const queue = now.queue.concat(fresh);
+      // The AI doesn't always stick to the mix, so trim any kind that's well over what was asked for.
+      const want = kindMix(now), got = {};
+      const varied = fresh.filter(q => { const k = q.kind || "other"; got[k] = (got[k] || 0) + 1; return got[k] <= (WORDY.has(k) ? want[k] || 0 : (want[k] || 0) + 2); });
+      const queue = now.queue.concat(varied);
       for (let i = queue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
       await save({ queue, dead: now.dead.concat(gone).slice(-300), lastError: "", ratedSinceRefill: 0 });
     } catch (e) {
@@ -281,7 +306,10 @@ function pickNext(st) {
   const notRecent = list => { const f = list.filter(q => !recentHosts.has(hostOf(q.url))); return f.length ? f : list; };
   const lib = notRecent(libraryFresh(st));
   const pool = notRecent(usable(st));
-  const itemW = q => catW(st, q.cat) * kindW(st, q.kind) * langW(st, q);
+  // Kinds shown in the last 3 stumbles come up less, so you don't get three blogs in a row.
+  const recentKinds = st.recentKinds || [];
+  const varietyW = q => q.kind && recentKinds.includes(q.kind) ? 0.3 : 1;
+  const itemW = q => catW(st, q.cat) * kindW(st, q.kind) * langW(st, q) * varietyW(q);
   // The built-in list is mostly English, so dip into it less when they prefer another language.
   const libShare = st.lang && st.lang !== "en" ? 0.05 : 0.2;
   if (pool.length && (!lib.length || Math.random() >= libShare)) {
@@ -310,7 +338,8 @@ async function stumble(tabId) {
   const today = st.today.date === todayKey ? { date: todayKey, n: st.today.n + 1 } : { date: todayKey, n: 1 };
   const seen = st.seen.concat(norm(pick.url)).slice(-3000);
   const queue = index >= 0 ? st.queue.filter((_, i) => i !== index) : st.queue;
-  await save({ current: pick, seen, queue, today });
+  const recentKinds = pick.kind ? [...(st.recentKinds || []), pick.kind].slice(-3) : st.recentKinds || [];
+  await save({ current: pick, seen, queue, today, recentKinds });
   let tab;
   if (tabId != null) tab = await chrome.tabs.update(tabId, { url: pick.url });
   else tab = await chrome.tabs.create({ url: pick.url });
@@ -464,6 +493,10 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "update") {
     // An error saved by the old version may already be fixed; let the new version report its own.
     await save({ lastError: "" });
+    // Older versions queued lots of blogs and essays; keep only a few so the new mix shows up right away.
+    const { queue: oldQueue = [] } = await chrome.storage.local.get("queue");
+    let wordy = 0;
+    await save({ queue: oldQueue.filter(q => !WORDY.has(q.kind) || ++wordy <= 3) });
     // Switch on interests added since the last version, so updating users see them.
     const { interests, knownCats = CATS.filter(c => c !== "Words & language" && c !== "History") } = await chrome.storage.local.get(["interests", "knownCats"]);
     const added = CATS.filter(c => !knownCats.includes(c));
