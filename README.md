@@ -12,7 +12,7 @@ Click the **Stumble** button in your toolbar, or press <kbd>Alt</kbd>+<kbd>Shift
 - **⚙** opens your interests and settings
 - **▴** shrinks the bar to a small pill, **✕** stops stumbling in that tab
 
-Stumble never shows the same site twice, until you clear your history.
+Stumble never shows the same site twice, until you clear your history. New sites from the AI are checked to make sure they load before they're queued, and if a site won't load when you land on it, Stumble marks it dead and skips ahead on its own.
 
 ## Interests
 

@@ -208,6 +208,20 @@ async function askAI(st) {
   return sites;
 }
 
+// Does this page actually load? "gone" means the site itself didn't answer (no such domain, refused, bad
+// certificate, or too slow); "missing" means the site answered but this page isn't there.
+async function reachable(url) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(url, { signal: ctl.signal, credentials: "omit", cache: "no-store" });
+    return r.status === 404 || r.status === 410 ? "missing" : "ok";   // 403s are usually bot checks a real visit passes
+  } catch (e) {
+    return "gone";
+  } finally {
+    clearTimeout(timer); ctl.abort();   // only the headers matter, so stop the download
+  }
+}
+
 function refill() {
   if (refilling) return refilling;
   // Ping a Chrome API every 20s so the background worker isn't put to sleep mid-request.
@@ -216,7 +230,11 @@ function refill() {
     const st = await load();
     if (!aiOn(st) || !st.interests.length) return;
     try {
-      const arr = await askAI(st);
+      const arr = (await askAI(st)).filter(s => s && typeof s.url === "string" && /^https?:\/\/\S+\.\S+/.test(s.url));
+      // AI models sometimes suggest sites that are gone or never existed, so check each one loads before queuing it.
+      const status = await Promise.all(arr.map(s => reachable(s.url)));
+      if (arr.length && !status.includes("ok")) throw new Error("Couldn't reach any of the new sites. Check your internet connection.");
+      const gone = arr.filter((_, i) => status[i] === "gone").map(s => hostOf(s.url));
       // merge against the latest state, since stumbles may have happened meanwhile
       const now = await load();
       const all = [...CATS, ...now.custom];
@@ -224,8 +242,8 @@ function refill() {
       const hostsTaken = new Set([...seenHosts(now, 300), ...now.queue.map(q => hostOf(q.url))]);
       const dead = new Set(now.dead);
       const fresh = [];
-      for (const s of arr) {
-        if (!s || typeof s.url !== "string" || !/^https?:\/\/\S+\.\S+/.test(s.url)) continue;
+      for (const [i, s] of arr.entries()) {
+        if (status[i] !== "ok") continue;
         const k = norm(s.url);
         if (taken.has(k) || hostsTaken.has(hostOf(s.url)) || dead.has(hostOf(s.url))) continue;
         taken.add(k); hostsTaken.add(hostOf(s.url));
@@ -234,7 +252,7 @@ function refill() {
       }
       const queue = now.queue.concat(fresh);
       for (let i = queue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
-      await save({ queue, lastError: "", ratedSinceRefill: 0 });
+      await save({ queue, dead: now.dead.concat(gone).slice(-300), lastError: "", ratedSinceRefill: 0 });
     } catch (e) {
       await save({ lastError: e.message || String(e) });
     }
@@ -287,6 +305,7 @@ async function stumble(tabId) {
   const { tabs = {} } = await chrome.storage.local.get("tabs");
   tabs[tab.id] = pick;
   await chrome.storage.local.set({ tabs });
+  landing.set(tab.id, Date.now());
   if (queue.length < 10 && aiOn(st)) refill();
   return { current: pick };
 }
@@ -329,6 +348,28 @@ chrome.webNavigation.onDOMContentLoaded.addListener(async ({ tabId, frameId }) =
   chrome.scripting.executeScript({ target: { tabId }, files: ["toolbar.js"] }).catch(() => {});
 });
 chrome.tabs.onRemoved.addListener(forgetTab);
+
+// If a site we just sent someone to won't load, Chrome shows an error page the toolbar can't appear on.
+// Mark the site dead and move on, up to 3 times in a row so a bad connection can't loop forever.
+const landing = new Map();   // tabId -> when we sent it to a site that hasn't finished loading yet
+const autoSkips = new Map();
+const OFFLINE = /ERR_(ABORTED|INTERNET_DISCONNECTED|NETWORK_CHANGED|NETWORK_IO_SUSPENDED|PROXY_CONNECTION_FAILED|BLOCKED_BY_CLIENT)/;
+chrome.webNavigation.onCompleted.addListener(({ tabId, frameId }) => {
+  if (frameId === 0) { landing.delete(tabId); autoSkips.delete(tabId); }
+});
+chrome.webNavigation.onErrorOccurred.addListener(async ({ tabId, frameId, url, error }) => {
+  if (frameId !== 0 || !landing.has(tabId)) return;
+  const fresh = Date.now() - landing.get(tabId) < 60000;
+  landing.delete(tabId);
+  if (!fresh || OFFLINE.test(error)) return;
+  const cur = await tabCurrent(tabId);
+  if (!cur) return;
+  const st = await load();
+  await save({ dead: st.dead.concat(hostOf(cur.url), hostOf(url)).filter((h, i, a) => a.indexOf(h) === i).slice(-300) });
+  const n = (autoSkips.get(tabId) || 0) + 1;
+  autoSkips.set(tabId, n);
+  if (n <= 3) stumbleWithFeedback(tabId);
+});
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   (async () => {
@@ -373,7 +414,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       }
       case "resetTaste": await save({ taste: { cats: {}, kinds: {} } }); return {};
       case "dead":
-        if (cur) await save({ dead: st.dead.concat(hostOf(cur.url)).slice(-100), saved: st.saved.filter(s => norm(s.url) !== norm(cur.url)) });
+        if (cur) await save({ dead: st.dead.concat(hostOf(cur.url)).slice(-300), saved: st.saved.filter(s => norm(s.url) !== norm(cur.url)) });
         return stumble(tabId);
       case "collapse": await save({ barCollapsed: !!msg.value }); return {};
       case "close": await forgetTab(tabId); return {};
