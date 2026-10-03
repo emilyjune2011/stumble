@@ -127,8 +127,11 @@ function aiRequest(st, content, opts) {
   const key = cleanKey(st.apiKey), model = st.model || DEFAULTS.model;
   const messages = [{ role: "user", content }];
   if (st.provider === "anthropic" || !PROVIDERS[st.provider]) {
-    return { headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-      body: { model, max_tokens: opts.maxTokens, stream: opts.stream, messages } };
+    const body = { model, max_tokens: opts.maxTokens, stream: opts.stream, messages };
+    // Newer Claude models think before answering, and thinking counts toward max_tokens.
+    // Picking sites doesn't need deep thought, so keep it light where the model supports effort.
+    if (/^claude-(opus|sonnet|fable|mythos)-(5|4-[6-9])/.test(model)) body.output_config = { effort: "low" };
+    return { headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" }, body };
   }
   const headers = { "content-type": "application/json" };
   if (key) headers.authorization = "Bearer " + key;
@@ -151,7 +154,8 @@ async function askAI(st) {
   if (st.provider === "custom" && !String(st.baseUrl || "").trim()) throw new Error("Add your AI service's base URL in settings.");
   let res;
   try {
-    res = await aiFetch(st, buildPrompt(st), { maxTokens: 8000, stream: true });
+    // Room for thinking plus ~3k tokens of JSON. Streaming, so a big limit can't time out.
+    res = await aiFetch(st, buildPrompt(st), { maxTokens: 32000, stream: true });
   } catch (e) {
     throw new Error(`Couldn't connect to ${name} (${e.message}). Check your internet connection${st.provider === "custom" ? " and the base URL in settings" : ""}.`);
   }
@@ -193,6 +197,7 @@ async function askAI(st) {
   }
   handle(buf);
   const sites = parseSites(text);
+  if (!sites.length && /max_tokens|length/.test(stop)) throw new Error(`${name} ran out of room before listing any sites. Try a different model in settings.`);
   if (!sites.length) throw new Error(`${name} replied, but not with a list of sites${stop ? ` (stopped: ${stop})` : ""}. It'll try again on your next stumble.`);
   return sites;
 }
