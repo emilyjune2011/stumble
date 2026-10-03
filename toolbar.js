@@ -40,8 +40,12 @@
     .blurb{color:var(--soft)}
     .err{color:var(--rose)}
     .quiet{color:var(--soft);padding:0 7px}
+    button:disabled{opacity:.4;cursor:default}
+    select{font:inherit;color:inherit;background:var(--paper);border:1.5px solid var(--line);border-radius:8px;height:32px;padding:0 6px;cursor:pointer}
+    select:focus-visible{outline:3px solid #D99A2B;outline-offset:1px}
     .pill{position:fixed;top:8px;right:10px;height:auto;padding:4px;gap:4px;border:1.5px solid var(--line);border-radius:12px}
     @media (max-width:760px){.blurb,.label{display:none}}
+    @media (max-width:560px){select{display:none}}
   `);
   root.adoptedStyleSheets = [css];
 
@@ -95,6 +99,16 @@
       return;
     }
 
+    const back = el("button", "quiet", "◀", { title: "Back to the previous site", "aria-label": "Back to the previous site" });
+    back.disabled = !st.canBack;
+    back.onclick = () => act("back", back);
+
+    // Mood: a quick steer for this browsing session
+    const mood = el("select", "", null, { title: "Mood for this session", "aria-label": "Mood" });
+    [["", "🎲 Any mood"], ["calm", "🌿 Calm"], ["play", "🎮 Play"], ["learn", "🧠 Learn"]].forEach(([v, t]) => mood.append(new Option(t, v)));
+    mood.value = st.mood || "";
+    mood.onchange = () => send({ type: "mood", value: mood.value });
+
     const like = el("button", st.liked ? "on" : "", st.liked ? "👍 Liked" : "👍", { title: "I like this", "aria-pressed": String(st.liked) });
     like.onclick = async () => { await send({ type: "like" }); render(); };
     const nope = el("button", "", "👎", { title: "Not for me", "aria-label": "Not for me" });
@@ -120,7 +134,7 @@
     const close = el("button", "quiet", "✕", { title: "Stop stumbling in this tab", "aria-label": "Close toolbar" });
     close.onclick = async () => { await send({ type: "close" }); pushPage(false); host.remove(); delete window.__stumbleBar; };
 
-    bar.append(el("span", "logo", "Stumble"), go, like, nope, info, dead, gear, hide, close);
+    bar.append(el("span", "logo", "Stumble"), back, go, like, nope, mood, info, dead, gear, hide, close);
   }
 
   document.documentElement.appendChild(host);
