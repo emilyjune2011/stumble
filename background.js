@@ -382,9 +382,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 });
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
-  if (reason === "install") chrome.runtime.openOptionsPage();
+  if (reason === "install") { await save({ knownCats: CATS }); chrome.runtime.openOptionsPage(); }
   // After an update, put fresh toolbars back on tabs that were stumbling.
   if (reason === "update") {
+    // Switch on interests added since the last version, so updating users see them.
+    const { interests, knownCats = CATS.filter(c => c !== "Words & language" && c !== "History") } = await chrome.storage.local.get(["interests", "knownCats"]);
+    const added = CATS.filter(c => !knownCats.includes(c));
+    if (interests && added.length) await save({ interests: [...interests, ...added.filter(c => !interests.includes(c))] });
+    await save({ knownCats: CATS });
     const { tabs = {} } = await chrome.storage.local.get("tabs");
     for (const id of Object.keys(tabs)) {
       chrome.scripting.executeScript({ target: { tabId: Number(id) }, files: ["toolbar.js"] })

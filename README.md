@@ -16,11 +16,11 @@ Stumble never shows the same site twice, until you clear your history.
 
 ## Interests
 
-Choose from Weird & wonderful, Music, Film & TV, Art & design, Science & space, Nostalgia, Travel & places, Food, Games & play, Reading & ideas, and Nature & calm, or add your own (brutalism, synths, anything). A few wildcards are mixed in so you still get surprised.
+Choose from Weird & wonderful, Music, Film & TV, Art & design, Science & space, Nostalgia, Travel & places, Food, Games & play, Reading & ideas, Nature & calm, Words & language, and History, or add your own (brutalism, synths, anything). A few wildcards are mixed in so you still get surprised.
 
 ## Endless stumbling (optional)
 
-Out of the box, Stumble draws from a built-in list of about 85 hand-picked sites. Add an AI API key in settings and it keeps finding new ones in batches of 25, shaped by your 👍 and 👎. Pick your provider:
+Out of the box, Stumble draws from a built-in list of about 180 hand-picked sites. Add an AI API key in settings and it keeps finding new ones in batches of 25, shaped by your 👍 and 👎. Pick your provider:
 
 | Provider | Get a key at | Suggested models |
 | --- | --- | --- |
