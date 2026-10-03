@@ -390,6 +390,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "install") { await save({ knownCats: CATS }); chrome.runtime.openOptionsPage(); }
   // After an update, put fresh toolbars back on tabs that were stumbling.
   if (reason === "update") {
+    // An error saved by the old version may already be fixed; let the new version report its own.
+    await save({ lastError: "" });
     // Switch on interests added since the last version, so updating users see them.
     const { interests, knownCats = CATS.filter(c => c !== "Words & language" && c !== "History") } = await chrome.storage.local.get(["interests", "knownCats"]);
     const added = CATS.filter(c => !knownCats.includes(c));
