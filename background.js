@@ -1,9 +1,9 @@
-importScripts("sites.js", "providers.js");
+importScripts("sites.js", "providers.js", "langs.js");
 
 const CATS = Object.keys(SITES);
 const DEFAULTS = {
   interests: CATS, custom: [], seen: [], saved: [], skipped: [], dead: [], queue: [],
-  current: null, apiKey: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
+  current: null, apiKey: "", lang: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
   taste: { cats: {}, kinds: {} }, ratedSinceRefill: 0
 };
 const norm = u => { try { const x = new URL(u); return (x.hostname.replace(/^www\./, "") + x.pathname.replace(/\/+$/, "") + x.search).toLowerCase(); } catch (e) { return String(u).toLowerCase(); } };
@@ -63,7 +63,7 @@ const LIBRARY_HOSTS = [...new Set(Object.values(SITES).flatMap(([, list]) => lis
 
 // Each batch leans a few random ways, so the AI doesn't keep reaching for the same famous picks.
 const ANGLES = [
-  "made by a single person as a labor of love", "from outside the English-speaking world (still usable in English)",
+  "made by a single person as a labor of love", "from a part of the world they probably haven't explored online",
   "from the early web, before 2010, and still online", "a university, library, or museum project most people never find",
   "built around one very specific hobby or obsession", "a tool or toy that does exactly one thing well",
   "a collection or archive someone has been building for years", "small and recent, made in the last few years",
@@ -85,6 +85,12 @@ function kindNote(st) {
   return (more.length ? `\nKinds of site they respond to: ${more.join(", ")}.` : "") + (less.length ? `\nKinds of site they tend to skip, so fewer of these: ${less.join(", ")}.` : "");
 }
 
+// Steer most of the batch toward their language without ruling the rest of the web out.
+function langNote(st) {
+  const name = LANGS[st.lang];
+  return name ? `They prefer sites in ${name}. Make about 85% of the batch sites whose main language is ${name}, or that need no reading (music, maps, toys, art). The rest can be in any language, if they're worth it.\n` : "";
+}
+
 function buildPrompt(st) {
   const shown = [...new Set([...seenHosts(st, 3000), ...st.queue.map(q => hostOf(q.url)), ...LIBRARY_HOSTS])].slice(-600);
   const liked = st.saved.slice(0, 20).map(s => `${s.title} (${hostOf(s.url)})`);
@@ -95,14 +101,14 @@ Their interests: ${st.interests.join(", ")}.
 Aim for roughly this share of the batch per interest, based on what they've been liking and skipping: ${shares(st).map(([c, p]) => `${c} ${p}%`).join(", ")}. Wildcard means anything at all outside their interests, to widen their world. Spread things out rather than bunching.${kindNote(st)}
 
 Aim for the delightful long tail of the web: personal sites, niche blogs, single-purpose interactive toys, digital archives and museum collections, fan-made databases, generators, web art, hobbyist reference sites, small magazines, odd one-page projects, beautiful essays. Vary the kind of site as much as the topic. For this batch, lean toward sites that are: ${pickAngles(3).join("; ")}.
-Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
+${langNote(st)}Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
 Only include sites you are confident exist and are still online. Prefer a homepage or a long-stable URL over a deep link. Every entry must be a different site.
 ${liked.length ? `\nThey loved these, so more in this spirit is welcome: ${liked.join("; ")}.` : ""}${nope.length ? `\nThey marked these "not for me", so steer away from similar: ${nope.join("; ")}.` : ""}${st.dead.length ? `\nThese sites turned out to be dead, avoid them: ${st.dead.slice(-40).join(", ")}.` : ""}
 
 They have already seen these websites, so suggest nothing on them, not even a different page: ${shown.join(", ")}
 
 Reply with only a JSON array of 25 objects, no other text:
-[{"title":"Site name","url":"https://...","interest":"one of their interests, exactly as written, or Wildcard","kind":"one of: ${KINDS.join(" | ")}","emoji":"one emoji","blurb":"One plain sentence under 20 words saying what it is."}]`;
+[{"title":"Site name","url":"https://...","interest":"one of their interests, exactly as written, or Wildcard","kind":"one of: ${KINDS.join(" | ")}","lang":"the site's main language as a 2-letter code, or none if it needs no reading","emoji":"one emoji","blurb":"One plain sentence under 20 words saying what it is."}]`;
 }
 
 // Pull every complete {...} object out of the AI's reply, even if the array got cut off.
@@ -224,7 +230,7 @@ function refill() {
         if (taken.has(k) || hostsTaken.has(hostOf(s.url)) || dead.has(hostOf(s.url))) continue;
         taken.add(k); hostsTaken.add(hostOf(s.url));
         const cat = all.find(c => c.toLowerCase() === String(s.interest || "").toLowerCase()) || "Wildcard";
-        fresh.push({ cat, icon: String(s.emoji || "✨").slice(0, 4), title: String(s.title || hostOf(s.url)).slice(0, 80), url: s.url, blurb: String(s.blurb || "").slice(0, 200), kind: KINDS.includes(s.kind) ? s.kind : "" });
+        fresh.push({ cat, icon: String(s.emoji || "✨").slice(0, 4), title: String(s.title || hostOf(s.url)).slice(0, 80), url: s.url, blurb: String(s.blurb || "").slice(0, 200), kind: KINDS.includes(s.kind) ? s.kind : "", lang: /^([a-z]{2}|none)$/.test(s.lang) ? s.lang : "" });
       }
       const queue = now.queue.concat(fresh);
       for (let i = queue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
@@ -236,13 +242,19 @@ function refill() {
   return refilling;
 }
 
+// Sites in other languages still turn up, just much less often. Unlabeled or wordless sites count as a match.
+const langW = (st, q) => !st.lang || !q.lang || q.lang === "none" || q.lang === st.lang ? 1 : 0.15;
+const langMatches = st => st.queue.filter(q => langW(st, q) === 1).length;
+
 function pickNext(st) {
   const recentHosts = seenHosts(st, 30);
   const notRecent = list => { const f = list.filter(q => !recentHosts.has(hostOf(q.url))); return f.length ? f : list; };
   const lib = notRecent(libraryFresh(st));
   const pool = notRecent(st.queue);
-  const itemW = q => catW(st, q.cat) * kindW(st, q.kind);
-  if (pool.length && (!lib.length || Math.random() < 0.8)) {
+  const itemW = q => catW(st, q.cat) * kindW(st, q.kind) * langW(st, q);
+  // The built-in list is mostly English, so dip into it less when they prefer another language.
+  const libShare = st.lang && st.lang !== "en" ? 0.05 : 0.2;
+  if (pool.length && (!lib.length || Math.random() >= libShare)) {
     const pick = pool[weightedIndex(pool, itemW)];
     return { pick, index: st.queue.indexOf(pick) };
   }
@@ -366,6 +378,10 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       case "collapse": await save({ barCollapsed: !!msg.value }); return {};
       case "close": await forgetTab(tabId); return {};
       case "options": chrome.runtime.openOptionsPage(); return {};
+      case "langChanged":
+        // Fetch a batch in the new language now if the queue has few sites in it.
+        if (aiOn(st) && langMatches(st) < 10) refill();
+        return {};
       case "interestsChanged":
         await save({ queue: st.queue.filter(q => q.cat === "Wildcard" || st.interests.includes(q.cat)) });
         if (aiOn(st) && st.queue.length < 10) refill();

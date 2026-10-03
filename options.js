@@ -3,7 +3,7 @@ const CATS = Object.keys(SITES);
 let st = {};
 
 async function load() {
-  st = Object.assign({ interests: CATS, custom: [], saved: [], apiKey: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5" }, await chrome.storage.local.get(null));
+  st = Object.assign({ interests: CATS, custom: [], saved: [], apiKey: "", lang: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5" }, await chrome.storage.local.get(null));
 }
 const allCats = () => [...CATS, ...st.custom];
 async function saveInterests() {
@@ -68,6 +68,12 @@ $("saveKey").onclick = async () => {
   else $("note").textContent = "The API said: " + (r && r.error || "no response");
 };
 
+Object.entries(LANGS).sort((a, b) => a[1].localeCompare(b[1])).forEach(([code, name]) => $("lang").appendChild(new Option(name, code)));
+$("lang").onchange = async () => {
+  await chrome.storage.local.set({ lang: $("lang").value });
+  chrome.runtime.sendMessage({ type: "langChanged" });
+};
+
 function renderSaved() {
   $("likedCount").textContent = st.saved.length;
   const ul = $("saved"); ul.innerHTML = "";
@@ -119,4 +125,4 @@ $("resetTaste").onclick = async () => {
 };
 
 chrome.storage.onChanged.addListener(async (ch) => { if (ch.saved || ch.taste) { await load(); renderSaved(); renderTaste(); } });
-(async () => { await load(); $("key").value = st.apiKey; $("provider").value = PROVIDERS[st.provider] ? st.provider : "anthropic"; $("baseUrl").value = st.baseUrl; $("model").value = st.model; renderProvider(true); renderChips(); renderSaved(); renderTaste(); })();
+(async () => { await load(); $("lang").value = LANGS[st.lang] ? st.lang : ""; $("key").value = st.apiKey; $("provider").value = PROVIDERS[st.provider] ? st.provider : "anthropic"; $("baseUrl").value = st.baseUrl; $("model").value = st.model; renderProvider(true); renderChips(); renderSaved(); renderTaste(); })();

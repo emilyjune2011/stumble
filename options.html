@@ -34,6 +34,13 @@ kbd{border:1.5px solid var(--line);border-radius:6px;padding:1px 6px;font:inheri
   </div>
   <button class="link" id="toggleAll" type="button">Select all</button>
 
+  <h2 class="serif">Language</h2>
+  <p class="help">Stumble will mostly show sites in your language, or ones that need no reading. Sites in other languages still turn up now and then. Works best with an AI key, since the built-in list is mostly in English.</p>
+  <div class="field">
+    <label for="lang">Preferred language</label>
+    <select id="lang"><option value="">No preference</option></select>
+  </div>
+
   <h2 class="serif">Endless stumbling</h2>
   <p class="help">Without a key, Stumble uses its built-in list of about 180 sites. With an AI API key, it keeps finding new ones in batches of 25, shaped by what you like and skip. <span id="getKey"></span>Usage is billed to your API account, and the key stays on this computer.</p>
   <div class="field">
@@ -76,5 +83,6 @@ kbd{border:1.5px solid var(--line);border-radius:6px;padding:1px 6px;font:inheri
   <button class="btn" id="clear" type="button">Clear history</button>
   <script src="sites.js"></script>
   <script src="providers.js"></script>
+  <script src="langs.js"></script>
   <script src="options.js"></script>
 </main></body></html>
