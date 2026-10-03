@@ -3,7 +3,7 @@ importScripts("sites.js", "providers.js", "langs.js");
 const CATS = Object.keys(SITES);
 const DEFAULTS = {
   interests: CATS, custom: [], seen: [], saved: [], skipped: [], dead: [], queue: [],
-  current: null, apiKey: "", lang: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
+  current: null, apiKey: "", lang: "", family: false, provider: "anthropic", baseUrl: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
   taste: { cats: {}, kinds: {} }, ratedSinceRefill: 0
 };
 const norm = u => { try { const x = new URL(u); return (x.hostname.replace(/^www\./, "") + x.pathname.replace(/\/+$/, "") + x.search).toLowerCase(); } catch (e) { return String(u).toLowerCase(); } };
@@ -72,9 +72,20 @@ const ANGLES = [
 ];
 const pickAngles = n => [...ANGLES].sort(() => Math.random() - 0.5).slice(0, n);
 
+/* ---- family-safe mode ---- */
+// A backstop for anything the AI labels "all ages" by mistake. Blunt on purpose: a false alarm only skips one site.
+const GROWN_UP = /\b(porn\w*|xxx|nsfw|sex\w*|nude|nudity|naked|erotic\w*|escorts?|onlyfans|casinos?|gambl\w*|betting|poker|slot machines?|lottery|vap(e|es|ing)|cannabis|marijuana|weed|cigar\w*|tobacco|beers?|wines?|winery|cocktails?|whiske?y|vodka|liquor|booze|brewer(y|ies)|drunk\w*|dating|hookups?|gore|horror|creepypasta|murder\w*|serial killers?|torture)\b/i;
+const kidSafe = q => q.audience === "all ages" && !GROWN_UP.test(`${q.title} ${q.blurb} ${q.url}`);
+// The queued sites Stumble may actually show right now.
+const usable = (st, queue = st.queue) => st.family ? queue.filter(kidSafe) : queue;
+
+function familyNote(st) {
+  return st.family ? `This is for a child or a family, so every site must be fine for ages 8 and up: no sexual content or nudity, no gore or graphic violence, nothing frightening, no gambling, no alcohol, drugs or tobacco, no dating, no strong language, no shopping, and no chat rooms, forums or social sites where strangers can message them. Leave out open-ended archives or random-page pickers that could land anywhere. When unsure, leave it out.\n` : "";
+}
+
 function libraryFresh(st) {
   const seen = new Set(st.seen), out = [];
-  st.interests.forEach(c => { if (SITES[c]) SITES[c][1].forEach(s => { if (!seen.has(norm(s[1]))) out.push({ cat: c, icon: SITES[c][0], title: s[0], url: s[1], blurb: s[2] }); }); });
+  st.interests.forEach(c => { if (SITES[c]) SITES[c][1].forEach(s => { if (!seen.has(norm(s[1])) && !(st.family && NOT_FOR_KIDS.has(s[1]))) out.push({ cat: c, icon: SITES[c][0], title: s[0], url: s[1], blurb: s[2] }); }); });
   return out;
 }
 
@@ -101,14 +112,14 @@ Their interests: ${st.interests.join(", ")}.
 Aim for roughly this share of the batch per interest, based on what they've been liking and skipping: ${shares(st).map(([c, p]) => `${c} ${p}%`).join(", ")}. Wildcard means anything at all outside their interests, to widen their world. Spread things out rather than bunching.${kindNote(st)}
 
 Aim for the delightful long tail of the web: personal sites, niche blogs, single-purpose interactive toys, digital archives and museum collections, fan-made databases, generators, web art, hobbyist reference sites, small magazines, odd one-page projects, beautiful essays. Vary the kind of site as much as the topic. For this batch, lean toward sites that are: ${pickAngles(3).join("; ")}.
-${langNote(st)}Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
+${langNote(st)}${familyNote(st)}Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
 Only include sites you are confident exist and are still online. Prefer a homepage or a long-stable URL over a deep link. Every entry must be a different site.
 ${liked.length ? `\nThey loved these, so more in this spirit is welcome: ${liked.join("; ")}.` : ""}${nope.length ? `\nThey marked these "not for me", so steer away from similar: ${nope.join("; ")}.` : ""}${st.dead.length ? `\nThese sites turned out to be dead, avoid them: ${st.dead.slice(-40).join(", ")}.` : ""}
 
 They have already seen these websites, so suggest nothing on them, not even a different page: ${shown.join(", ")}
 
 Reply with only a JSON array of 25 objects, no other text:
-[{"title":"Site name","url":"https://...","interest":"one of their interests, exactly as written, or Wildcard","kind":"one of: ${KINDS.join(" | ")}","lang":"the site's main language as a 2-letter code, or none if it needs no reading","emoji":"one emoji","blurb":"One plain sentence under 20 words saying what it is."}]`;
+[{"title":"Site name","url":"https://...","interest":"one of their interests, exactly as written, or Wildcard","kind":"one of: ${KINDS.join(" | ")}","audience":"all ages, teens, or adults: who the site is suitable for, judged honestly","lang":"the site's main language as a 2-letter code, or none if it needs no reading","emoji":"one emoji","blurb":"One plain sentence under 20 words saying what it is."}]`;
 }
 
 // Pull every complete {...} object out of the AI's reply, even if the array got cut off.
@@ -248,7 +259,8 @@ function refill() {
         if (taken.has(k) || hostsTaken.has(hostOf(s.url)) || dead.has(hostOf(s.url))) continue;
         taken.add(k); hostsTaken.add(hostOf(s.url));
         const cat = all.find(c => c.toLowerCase() === String(s.interest || "").toLowerCase()) || "Wildcard";
-        fresh.push({ cat, icon: String(s.emoji || "✨").slice(0, 4), title: String(s.title || hostOf(s.url)).slice(0, 80), url: s.url, blurb: String(s.blurb || "").slice(0, 200), kind: KINDS.includes(s.kind) ? s.kind : "", lang: /^([a-z]{2}|none)$/.test(s.lang) ? s.lang : "" });
+        fresh.push({ cat, icon: String(s.emoji || "✨").slice(0, 4), title: String(s.title || hostOf(s.url)).slice(0, 80), url: s.url, blurb: String(s.blurb || "").slice(0, 200), kind: KINDS.includes(s.kind) ? s.kind : "", lang: /^([a-z]{2}|none)$/.test(s.lang) ? s.lang : "", audience: String(s.audience || "").toLowerCase().trim() });
+        if (now.family && !kidSafe(fresh[fresh.length - 1])) fresh.pop();
       }
       const queue = now.queue.concat(fresh);
       for (let i = queue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
@@ -262,13 +274,13 @@ function refill() {
 
 // Sites in other languages still turn up, just much less often. Unlabeled or wordless sites count as a match.
 const langW = (st, q) => !st.lang || !q.lang || q.lang === "none" || q.lang === st.lang ? 1 : 0.15;
-const langMatches = st => st.queue.filter(q => langW(st, q) === 1).length;
+const langMatches = st => usable(st).filter(q => langW(st, q) === 1).length;
 
 function pickNext(st) {
   const recentHosts = seenHosts(st, 30);
   const notRecent = list => { const f = list.filter(q => !recentHosts.has(hostOf(q.url))); return f.length ? f : list; };
   const lib = notRecent(libraryFresh(st));
-  const pool = notRecent(st.queue);
+  const pool = notRecent(usable(st));
   const itemW = q => catW(st, q.cat) * kindW(st, q.kind) * langW(st, q);
   // The built-in list is mostly English, so dip into it less when they prefer another language.
   const libShare = st.lang && st.lang !== "en" ? 0.05 : 0.2;
@@ -283,7 +295,7 @@ function pickNext(st) {
 // After 3 ratings, fetch a fresh batch early (if the queue isn't already big) so new taste shows up sooner.
 async function maybeRefreshEarly() {
   const st = await load();
-  if (aiOn(st) && st.ratedSinceRefill >= 3 && st.queue.length < 25) refill();
+  if (aiOn(st) && st.ratedSinceRefill >= 3 && usable(st).length < 25) refill();
 }
 
 async function stumble(tabId) {
@@ -306,7 +318,7 @@ async function stumble(tabId) {
   tabs[tab.id] = pick;
   await chrome.storage.local.set({ tabs });
   landing.set(tab.id, Date.now());
-  if (queue.length < 10 && aiOn(st)) refill();
+  if (usable(st, queue).length < 10 && aiOn(st)) refill();
   return { current: pick };
 }
 
@@ -419,13 +431,16 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       case "collapse": await save({ barCollapsed: !!msg.value }); return {};
       case "close": await forgetTab(tabId); return {};
       case "options": chrome.runtime.openOptionsPage(); return {};
+      case "familyChanged":
+        if (aiOn(st) && usable(st).length < 10) refill();
+        return {};
       case "langChanged":
         // Fetch a batch in the new language now if the queue has few sites in it.
         if (aiOn(st) && langMatches(st) < 10) refill();
         return {};
       case "interestsChanged":
         await save({ queue: st.queue.filter(q => q.cat === "Wildcard" || st.interests.includes(q.cat)) });
-        if (aiOn(st) && st.queue.length < 10) refill();
+        if (aiOn(st) && usable(st).length < 10) refill();
         return {};
       case "refill": refill(); return {};
       case "testKey": {

@@ -22,6 +22,14 @@ Choose from Weird & wonderful, Music, Film & TV, Art & design, Science & space, 
 
 Pick a preferred language in settings and Stumble will mostly show sites in that language, or ones that need no reading (music, maps, toys, art). It filters rather than blocks: sites in other languages still turn up now and then. This works best with an AI key, since the built-in list is mostly in English.
 
+## Family-safe mode
+
+Turn on **Family-safe mode** in settings and Stumble only shows sites suitable for ages 8 and up: no adult content, violence, gambling, alcohol, or places where strangers can chat. Built-in sites that don't fit are skipped, the AI is told the rules and has to label every site's audience, and anything not labeled "all ages" (or that trips a list of grown-up words) is blocked, not just shown less often.
+
+Set a **parental PIN** to lock it: turning family-safe mode off, changing the PIN, or changing the AI settings then asks for it.
+
+It has limits: it only controls the sites Stumble sends you to, not the rest of the browser, and anyone who can open `chrome://extensions` can switch Stumble off. AI labels can be wrong, too. Use it alongside your browser's or device's own parental controls.
+
 ## Endless stumbling (optional)
 
 Out of the box, Stumble draws from a built-in list of about 180 hand-picked sites. Add an AI API key in settings and it keeps finding new ones in batches of 25, shaped by your 👍 and 👎. Pick your provider:

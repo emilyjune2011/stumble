@@ -200,4 +200,47 @@ const SITES = {
 };
 
 
-if (typeof self !== 'undefined') self.SITES = SITES;
+// Left out in family-safe mode: grown-up films, music with explicit lyrics, alcohol, open chat with
+// strangers, and archives or random pickers that can land anywhere. Erring on the side of caution.
+const NOT_FOR_KIDS = new Set([
+  "https://www.windows93.net",
+  "https://imsdb.com",
+  "https://www.scriptslug.com",
+  "https://film-grab.com",
+  "https://www.sensesofcinema.com",
+  "https://brightlightsfilm.com",
+  "https://mubi.com/notebook",
+  "https://archive.org/details/feature_films",
+  "https://archive.org/details/prelinger",
+  "https://www.openculture.com/freemoviesonline",
+  "https://www.movie-map.com",
+  "https://tvtropes.org",
+  "https://www.artofthetitle.com",
+  "https://www.criterion.com/closet-picks",
+  "https://www.nts.live",
+  "https://daily.bandcamp.com",
+  "https://www.whosampled.com",
+  "https://onlinesequencer.net",
+  "https://www.diffordsguide.com",
+  "https://winefolly.com",
+  "https://hyperallergic.com",
+  "https://neocities.org/browse",
+  "https://gifcities.org",
+  "https://wiby.me",
+  "https://web.archive.org",
+  "https://oldweb.today",
+  "https://theoldnet.com",
+  "https://en.wikipedia.org/wiki/Special:Random",
+  "https://en.wikipedia.org/wiki/Wikipedia:Unusual_articles",
+  "https://longreads.com",
+  "https://kottke.org",
+  "https://www.damninteresting.com",
+  "https://waitbutwhy.com",
+  "https://lettersofnote.com",
+  "https://www.laphamsquarterly.org",
+  "https://languagelog.ldc.upenn.edu",
+  "https://www.oldbaileyonline.org",
+  "https://lichess.org"
+]);
+
+if (typeof self !== 'undefined') { self.SITES = SITES; self.NOT_FOR_KIDS = NOT_FOR_KIDS; }
