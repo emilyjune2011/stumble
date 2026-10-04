@@ -3,7 +3,7 @@ const CATS = Object.keys(SITES);
 let st = {};
 
 async function load() {
-  st = Object.assign({ interests: CATS, custom: [], saved: [], apiKey: "", lang: "", family: false, familyPin: "", adventure: 2, provider: "anthropic", baseUrl: "", model: "claude-sonnet-5" }, await chrome.storage.local.get(null));
+  st = Object.assign({ interests: CATS, custom: [], saved: [], later: [], apiKey: "", lang: "", family: false, familyPin: "", adventure: 2, provider: "anthropic", baseUrl: "", model: "claude-sonnet-5" }, await chrome.storage.local.get(null));
 }
 const allCats = () => [...CATS, ...st.custom];
 async function saveInterests() {
@@ -129,21 +129,26 @@ $("removePin").onclick = async () => {
   $("familyNote").textContent = "PIN removed.";
 };
 
-function renderSaved() {
-  $("likedCount").textContent = st.saved.length;
-  const ul = $("saved"); ul.innerHTML = "";
-  if (!st.saved.length) { ul.innerHTML = '<li><small>Sites you like collect here, and help steer what you stumble onto next.</small></li>'; return; }
-  st.saved.forEach(s => {
+// Liked sites and saved-for-later sites share one list layout.
+function renderList(key, listId, countId, emptyText) {
+  $(countId).textContent = st[key].length;
+  const ul = $(listId); ul.innerHTML = "";
+  if (!st[key].length) { ul.innerHTML = `<li><small>${emptyText}</small></li>`; return; }
+  st[key].forEach(s => {
     const li = document.createElement("li");
     li.innerHTML = '<span><a target="_blank" rel="noopener noreferrer"></a><br><small></small></span><button class="link" type="button">Remove</button>';
     const a = li.querySelector("a"); a.href = s.url; a.textContent = s.title;
     li.querySelector("small").textContent = s.cat;
-    li.querySelector("button").onclick = async () => { st.saved = st.saved.filter(x => x.url !== s.url); await chrome.storage.local.set({ saved: st.saved }); renderSaved(); };
+    li.querySelector("button").onclick = async () => { st[key] = st[key].filter(x => x.url !== s.url); await chrome.storage.local.set({ [key]: st[key] }); renderList(key, listId, countId, emptyText); };
     ul.appendChild(li);
   });
 }
+function renderSaved() {
+  renderList("later", "later", "laterCount", "Press 🔖 on the toolbar to keep a site here for later, without it counting as a like.");
+  renderList("saved", "saved", "likedCount", "Sites you like collect here, and help steer what you stumble onto next.");
+}
 $("clear").onclick = async () => {
-  if (!confirm("Clear your stumble history? Liked sites stay.")) return;
+  if (!confirm("Clear your stumble history? Liked and saved sites stay.")) return;
   await chrome.storage.local.set({ seen: [], skipped: [], dead: [], today: { date: "", n: 0 } });
   $("note").textContent = "History cleared.";
 };
@@ -175,9 +180,9 @@ function renderTaste() {
   if (!box.children.length) box.innerHTML = '<p class="help">Nothing yet. Rate a few sites from the toolbar.</p>';
 }
 $("resetTaste").onclick = async () => {
-  if (!confirm("Forget what Stumble has learned from your ratings? Liked sites stay.")) return;
+  if (!confirm("Forget what Stumble has learned from your ratings? Liked and saved sites stay.")) return;
   await chrome.runtime.sendMessage({ type: "resetTaste" });
 };
 
-chrome.storage.onChanged.addListener(async (ch) => { if (ch.saved || ch.taste) { await load(); renderSaved(); renderTaste(); } });
+chrome.storage.onChanged.addListener(async (ch) => { if (ch.saved || ch.later || ch.taste) { await load(); renderSaved(); renderTaste(); } });
 (async () => { await load(); $("lang").value = LANGS[st.lang] ? st.lang : ""; $("key").value = st.apiKey; $("provider").value = PROVIDERS[st.provider] ? st.provider : "anthropic"; $("baseUrl").value = st.baseUrl; $("model").value = st.model; renderProvider(true); renderFamily(); $("adventure").value = st.adventure; renderAdventure(); renderChips(); renderSaved(); renderTaste(); })();

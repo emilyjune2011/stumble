@@ -9,6 +9,7 @@ Click the **Stumble** button in your toolbar, or press <kbd>Alt</kbd>+<kbd>Shift
 - **◀** goes back to the site before, and keeps going back if you press it again
 - **Stumble!** goes to the next site
 - **👍 / 👎** tell Stumble what you like, so it shows you more of it
+- **🔖** saves a site to look at later, without counting as a like. Your saved sites are listed in settings
 - **Mood** (🎲 Any, 🌿 Calm, 🎮 Play, 🧠 Learn) steers what comes up for this browsing session. It resets when you restart Chrome
 - **Broken?** skips a dead link and never shows it again
 - **⚙** opens your interests and settings

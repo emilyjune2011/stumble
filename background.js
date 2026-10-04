@@ -2,7 +2,7 @@ importScripts("sites.js", "providers.js", "langs.js");
 
 const CATS = Object.keys(SITES);
 const DEFAULTS = {
-  interests: CATS, custom: [], seen: [], saved: [], skipped: [], dead: [], queue: [],
+  interests: CATS, custom: [], seen: [], saved: [], later: [], skipped: [], dead: [], queue: [],
   current: null, apiKey: "", lang: "", family: false, adventure: 2, mood: "", history: [], provider: "anthropic", baseUrl: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
   taste: { cats: {}, kinds: {} }, ratedSinceRefill: 0
 };
@@ -464,7 +464,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       case "barState": {
         const { barCollapsed = false } = await chrome.storage.local.get("barCollapsed");
         const liked = !!cur && st.saved.some(s => norm(s.url) === norm(cur.url));
-        return { current: cur, liked, collapsed: barCollapsed, error: st.lastError, hasKey: aiOn(st), left: st.queue.length, canBack: (st.history || []).length > 1, mood: st.mood };
+        const later = !!cur && st.later.some(s => norm(s.url) === norm(cur.url));
+        return { current: cur, liked, later, collapsed: barCollapsed, error: st.lastError, hasKey: aiOn(st), left: st.queue.length, canBack: (st.history || []).length > 1, mood: st.mood };
       }
       case "like": {
         if (!cur) return {};
@@ -474,6 +475,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         await save({ saved, taste, ratedSinceRefill: st.ratedSinceRefill + 1 });
         maybeRefreshEarly();
         return { liked: !has };
+      }
+      case "later": {
+        // Saved to look at later. Unlike 👍, this doesn't count as a rating or steer future picks.
+        if (!cur) return {};
+        const has = st.later.some(s => norm(s.url) === norm(cur.url));
+        const later = has ? st.later.filter(s => norm(s.url) !== norm(cur.url)) : [{ title: cur.title, url: cur.url, cat: cur.cat }, ...st.later].slice(0, 300);
+        await save({ later });
+        return { later: !has };
       }
       case "nope": {
         if (!cur) return stumble(tabId);
