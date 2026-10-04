@@ -136,8 +136,17 @@ function kindMix(st, total = 25) {
   return Object.fromEntries(mix.filter(m => m.n > 0).map(m => [m.k, m.n]));
 }
 
+// Ask for more sites than a batch needs, then keep the ones the AI rates most highly (see refill).
+const CANDIDATES = 35, BATCH = 25;
+
+// A few built-in sites that show the standard to aim for. Reading-heavy ones are left out on purpose.
+function exemplars(st, n = 6) {
+  const pool = Object.values(SITES).flatMap(([, list]) => list).filter(s => !WORDY.has(s[3]) && !(st.family && NOT_FOR_KIDS.has(s[1])));
+  return [...pool].sort(() => Math.random() - 0.5).slice(0, n).map(s => `${s[0]} (${hostOf(s[1])}): ${s[2]}`);
+}
+
 function kindNote(st) {
-  const mix = kindMix(st);
+  const mix = kindMix(st, CANDIDATES);
   return `\nMake the batch this mix of kinds of site: ${Object.entries(mix).map(([k, n]) => `${n} ${k}`).join(", ")}. Label each with the kind it really is; if a site is mostly something to read, it counts as a blog or essay.`;
 }
 
@@ -153,20 +162,23 @@ function buildPrompt(st) {
   const shown = [...new Set([...seenHosts(st, 150), ...st.queue.map(q => hostOf(q.url))])].slice(-150);
   const liked = st.saved.slice(0, 12).map(s => `${s.title} (${hostOf(s.url)})`);
   const nope = st.skipped.slice(-12).map(s => `${s.title} (${s.host})`);
-  return `You are the engine of a StumbleUpon-style discovery app. Suggest 25 websites for one person to stumble onto, one at a time.
+  return `You are the engine of a StumbleUpon-style discovery app. Suggest ${CANDIDATES} websites for one person to stumble onto, one at a time. The app keeps only the best ${BATCH}, so be a demanding judge of your own picks.
 
 Their interests: ${st.interests.join(", ")}.
 Aim for roughly this share of the batch per interest, based on what they've been liking and skipping: ${shares(st).map(([c, p]) => `${c} ${p}%`).join(", ")}. Wildcard means anything at all outside their interests, to widen their world. Spread things out rather than bunching.${kindNote(st)}
 
 Aim for the delightful long tail of the web: single-purpose interactive toys, generators, browser games, handy little tools, web art, live cams and explorable maps, radio and sound sites, digital archives and museum collections, fan-made databases, hobbyist reference sites, odd one-page projects. Vary the kind of site as much as the topic: someone clicking through should do, see, and hear things, not just read. For this batch, lean toward sites that are: ${pickAngles(3).join("; ")}.
+
+What makes a site worth stumbling onto: someone lands on it and says "whoa" or "I had no idea this existed", and wants to send it to a friend. It has one strong, specific idea and is clearly made with care. Not interesting, however well made: content farms and SEO articles, listicles, generic utilities that a hundred sites offer (unit converters, password generators, lorem ipsum, QR makers), startup or app landing pages, ad-heavy pages, ordinary news, how-to or recipe blogs, and anything you'd only call "useful".
+These are at the level we're after (they already know these, so don't suggest them): ${exemplars(st).join("; ")}.
 ${adv(st).note ? adv(st).note + "\n" : ""}${MOODS[st.mood] ? MOODS[st.mood].note + "\n" : ""}${langNote(st)}${familyNote(st)}Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
 Only include sites you are confident exist and are still online. Prefer a homepage or a long-stable URL over a deep link. Every entry must be a different site.
 ${liked.length ? `\nThey loved these, so more in this spirit is welcome: ${liked.join("; ")}.` : ""}${nope.length ? `\nThey marked these "not for me", so steer away from similar: ${nope.join("; ")}.` : ""}${st.dead.length ? `\nThese sites turned out to be dead, avoid them: ${st.dead.slice(-15).join(", ")}.` : ""}
 
 They have already seen these websites, so suggest nothing on them, not even a different page: ${shown.join(", ")}
 
-Reply with only a JSON array of 25 objects, no other text:
-[{"title":"Site name","url":"https://...","interest":"one of their interests, exactly as written, or Wildcard","kind":"one of: ${KINDS.join(" | ")}","audience":"all ages, teens, or adults: who the site is suitable for, judged honestly","lang":"the site's main language as a 2-letter code, or none if it needs no reading","emoji":"one emoji","blurb":"One plain sentence under 20 words saying what it is."}]`;
+Reply with only a JSON array of ${CANDIDATES} objects, no other text:
+[{"title":"Site name","url":"https://...","interest":"one of their interests, exactly as written, or Wildcard","kind":"one of: ${KINDS.join(" | ")}","audience":"all ages, teens, or adults: who the site is suitable for, judged honestly","lang":"the site's main language as a 2-letter code, or none if it needs no reading","emoji":"one emoji","blurb":"One plain sentence under 20 words saying what it is.","wow":"1 to 10: how likely a curious person is to say whoa. Be honest; most sites are not a 9"}]`;
 }
 
 // Pull every complete {...} object out of the AI's reply, even if the array got cut off.
@@ -192,9 +204,9 @@ function aiRequest(st, content, opts) {
   const messages = [{ role: "user", content }];
   if (st.provider === "anthropic" || !PROVIDERS[st.provider]) {
     const body = { model, max_tokens: opts.maxTokens, stream: opts.stream, messages };
-    // Newer Claude models think before answering, and thinking counts toward max_tokens.
-    // Picking sites doesn't need deep thought, so keep it light where the model supports effort.
-    if (/^claude-(opus|sonnet|fable|mythos)-(5|4-[6-9])/.test(model)) body.output_config = { effort: "low" };
+    // Newer Claude models think before answering, and thinking counts toward max_tokens. A batch gets
+    // medium effort (better judgment about what's actually interesting); the key test gets low.
+    if (/^claude-(opus|sonnet|fable|mythos)-(5|4-[6-9])/.test(model)) body.output_config = { effort: opts.effort || "low" };
     return { headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" }, body };
   }
   const headers = { "content-type": "application/json" };
@@ -219,7 +231,7 @@ async function askAI(st) {
   let res;
   try {
     // Room for thinking plus ~3k tokens of JSON. Streaming, so a big limit can't time out.
-    res = await aiFetch(st, buildPrompt(st), { maxTokens: 32000, stream: true });
+    res = await aiFetch(st, buildPrompt(st), { maxTokens: 32000, stream: true, effort: "medium" });
   } catch (e) {
     throw new Error(`Couldn't connect to ${name} (${e.message}). Check your internet connection${st.provider === "custom" ? " and the base URL in settings" : ""}.`);
   }
@@ -268,16 +280,37 @@ async function askAI(st) {
 
 // Does this page actually load? "gone" means the site itself didn't answer (no such domain, refused, bad
 // certificate, or too slow); "missing" means the site answered but this page isn't there.
+// Pages that load but aren't a real site anymore: parked or for-sale domains, suspended hosting, empty folders.
+const PARKED_HOSTS = /(^|\.)(sedo|sedoparking|parkingcrew|bodis|dan|afternic|hugedomains|undeveloped|above|parklogic|domainmarket)\.(com|net|io)$/;
+const PARKED_PAGE = /(this domain (name )?(is|may be) for sale|buy this domain|this domain is parked|parked free|this domain has expired|(account|website) (has been )?suspended|<title>\s*(index of \/|coming soon\b|under construction\b))/i;
+async function pageStart(r, limit = 60000) {
+  const reader = r.body && r.body.getReader(), dec = new TextDecoder();
+  let text = "";
+  while (reader && text.length < limit) { const { done, value } = await reader.read(); if (done) break; text += dec.decode(value, { stream: true }); }
+  return text;
+}
 async function reachable(url) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
   try {
     const r = await fetch(url, { signal: ctl.signal, credentials: "omit", cache: "no-store" });
-    return r.status === 404 || r.status === 410 ? "missing" : "ok";   // 403s are usually bot checks a real visit passes
+    if (r.status === 404 || r.status === 410) return "missing";
+    if (PARKED_HOSTS.test(hostOf(r.url || url))) return "gone";
+    if (r.ok && PARKED_PAGE.test(await pageStart(r).catch(() => ""))) return "gone";
+    return "ok";   // 403s are usually bot checks a real visit passes
   } catch (e) {
     return "gone";
   } finally {
-    clearTimeout(timer); ctl.abort();   // only the headers matter, so stop the download
+    clearTimeout(timer); ctl.abort();   // only the start of the page matters, so stop the download
   }
+}
+
+// Keep the candidates the AI rated highest: 7+ out of 10, topped up with 6s if too few clear the bar.
+// Best first, so when the kind mix trims a kind, the weakest of that kind are the ones to go.
+const wowOf = s => { const n = Number(s.wow); return Number.isFinite(n) ? n : 7; };   // models that skip the score aren't penalized
+function curate(arr) {
+  const ranked = [...arr].sort((a, b) => wowOf(b) - wowOf(a));
+  const strong = ranked.filter(s => wowOf(s) >= 7);
+  return strong.length >= 12 ? strong : ranked.filter(s => wowOf(s) >= 6);
 }
 
 function refill() {
@@ -288,7 +321,7 @@ function refill() {
     const st = await load();
     if (!aiOn(st) || !st.interests.length) return;
     try {
-      const arr = (await askAI(st)).filter(s => s && typeof s.url === "string" && /^https?:\/\/\S+\.\S+/.test(s.url));
+      const arr = curate((await askAI(st)).filter(s => s && typeof s.url === "string" && /^https?:\/\/\S+\.\S+/.test(s.url)));
       // AI models sometimes suggest sites that are gone or never existed, so check each one loads before queuing it.
       const status = await Promise.all(arr.map(s => reachable(s.url)));
       if (arr.length && !status.includes("ok")) throw new Error("Couldn't reach any of the new sites. Check your internet connection.");
@@ -310,9 +343,9 @@ function refill() {
         if (now.family && !kidSafe(fresh[fresh.length - 1])) fresh.pop();
       }
       // The AI doesn't always stick to the mix, so trim any kind that's well over what was asked for.
-      const want = kindMix(now), got = {};
+      const want = kindMix(now, BATCH), got = {};
       const varied = fresh.filter(q => { const k = q.kind || "other"; got[k] = (got[k] || 0) + 1; return got[k] <= (WORDY.has(k) ? want[k] || 0 : (want[k] || 0) + 2); });
-      const queue = now.queue.concat(varied);
+      const queue = now.queue.concat(varied.slice(0, BATCH));
       for (let i = queue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
       await save({ queue, dead: now.dead.concat(gone).slice(-300), lastError: "", ratedSinceRefill: 0 });
     } catch (e) {
