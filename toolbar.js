@@ -111,6 +111,8 @@
 
     const like = el("button", st.liked ? "on" : "", st.liked ? "👍 Liked" : "👍", { title: "I like this", "aria-pressed": String(st.liked) });
     like.onclick = async () => { await send({ type: "like" }); render(); };
+    const later = el("button", st.later ? "on" : "", st.later ? "🔖 Saved" : "🔖", { title: st.later ? "Saved for later. Click to unsave" : "Save for later (doesn't count as a like)", "aria-label": "Save for later", "aria-pressed": String(!!st.later) });
+    later.onclick = async () => { await send({ type: "later" }); render(); };
     const nope = el("button", "", "👎", { title: "Not for me", "aria-label": "Not for me" });
     nope.onclick = () => act("nope", nope);
 
@@ -134,11 +136,11 @@
     const close = el("button", "quiet", "✕", { title: "Stop stumbling in this tab", "aria-label": "Close toolbar" });
     close.onclick = async () => { await send({ type: "close" }); pushPage(false); host.remove(); delete window.__stumbleBar; };
 
-    bar.append(el("span", "logo", "Stumble"), back, go, like, nope, mood, info, dead, gear, hide, close);
+    bar.append(el("span", "logo", "Stumble"), back, go, like, later, nope, mood, info, dead, gear, hide, close);
   }
 
   document.documentElement.appendChild(host);
-  chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && (ch.saved || ch.lastError || ch.barCollapsed)) render(); });
+  chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && (ch.saved || ch.later || ch.lastError || ch.barCollapsed)) render(); });
   window.__stumbleBar = { render };
   render();
 })();

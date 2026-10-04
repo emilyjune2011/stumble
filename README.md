@@ -9,6 +9,7 @@ Click the **Stumble** button in your toolbar, or press <kbd>Alt</kbd>+<kbd>Shift
 - **◀** goes back to the site before, and keeps going back if you press it again
 - **Stumble!** goes to the next site
 - **👍 / 👎** tell Stumble what you like, so it shows you more of it
+- **🔖** saves a site to look at later, without counting as a like. Your saved sites are listed in settings
 - **Mood** (🎲 Any, 🌿 Calm, 🎮 Play, 🧠 Learn) steers what comes up for this browsing session. It resets when you restart Chrome
 - **Broken?** skips a dead link and never shows it again
 - **⚙** opens your interests and settings
@@ -42,14 +43,14 @@ Out of the box, Stumble draws from a built-in list of about 180 hand-picked site
 
 | Provider | Get a key at | Suggested models |
 | --- | --- | --- |
-| Claude (Anthropic) | [console.anthropic.com](https://console.anthropic.com) | `claude-sonnet-5`, `claude-haiku-4-5-20251001` |
+| Claude (Anthropic) | [console.anthropic.com](https://console.anthropic.com) | `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-4-5-20251001` |
 | OpenAI | [platform.openai.com](https://platform.openai.com) | `gpt-6.1-sol`, `gpt-6-luna` |
 | Gemini (Google) | [aistudio.google.com](https://aistudio.google.com) | `gemini-3.8-flash` |
 | Other | Any OpenAI-compatible service: OpenRouter, Groq, Mistral, or [Ollama](https://ollama.com) running on your computer | Whatever the service offers |
 
 You can type any model name your account can use. For **Other**, enter the service's base URL (for example `https://openrouter.ai/api/v1` or `http://localhost:11434/v1`). A key is optional there, since local models usually don't need one.
 
-Stumble also avoids showing pages from the same website close together: a site you saw in your last 30 stumbles is skipped, and the AI is told not to suggest any page on sites you have already seen. Each batch asks for a set mix of kinds of site (mostly toys, games, tools, art, maps, live cams, audio and archives, with only a couple of blogs or essays unless you keep liking them), Stumble trims anything the AI over-delivers, and it avoids showing the same kind of site back to back. Each batch also leans a few random directions (one-person passion projects, the early web, museum archives, sites from outside the English-speaking world…) so you keep landing somewhere new.
+Stumble also avoids showing pages from the same website close together: a site you saw in your last 30 stumbles is skipped, and the AI is told not to suggest any page on sites you have already seen. Each batch asks for a set mix of kinds of site (mostly toys, games, tools, art, maps, live cams, audio and archives, with only a couple of blogs or essays unless you keep liking them), Stumble trims anything the AI over-delivers, and it avoids showing the same kind of site back to back. To raise the bar, Stumble asks the AI for 35 candidates, has it rate each one for how likely it is to make someone say "whoa", and keeps only the best 25, so content farms, generic utilities and "merely useful" sites get left out. Parked domains, "domain for sale" pages and suspended sites are caught and dropped. Each batch also leans a few random directions (one-person passion projects, the early web, museum archives, sites from outside the English-speaking world…) so you keep landing somewhere new.
 
 ### Privacy and cost
 
