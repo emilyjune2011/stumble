@@ -6,8 +6,10 @@ Pick your interests, click the button, land somewhere new on the internet. A Stu
 
 Click the **Stumble** button in your toolbar, or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>, and the current tab jumps to a random site that fits your interests. A slim bar appears at the top of the page:
 
+- **◀** goes back to the site before, and keeps going back if you press it again
 - **Stumble!** goes to the next site
 - **👍 / 👎** tell Stumble what you like, so it shows you more of it
+- **Mood** (🎲 Any, 🌿 Calm, 🎮 Play, 🧠 Learn) steers what comes up for this browsing session. It resets when you restart Chrome
 - **Broken?** skips a dead link and never shows it again
 - **⚙** opens your interests and settings
 - **▴** shrinks the bar to a small pill, **✕** stops stumbling in that tab
@@ -17,6 +19,10 @@ Stumble never shows the same site twice, until you clear your history. New sites
 ## Interests
 
 Choose from Weird & wonderful, Music, Film & TV, Art & design, Science & space, Nostalgia, Travel & places, Food, Games & play, Reading & ideas, Nature & calm, Words & language, and History, or add your own (brutalism, synths, anything). A few wildcards are mixed in so you still get surprised.
+
+## How adventurous?
+
+A slider in settings runs from **Familiar** to **Adventurous**. Familiar sticks close to what you've liked, with almost no wildcards. Adventurous lets your 👍 and 👎 pull less, sends up to 40% of picks outside your interests, and tells the AI to surprise you.
 
 ## Language
 
@@ -43,7 +49,7 @@ Out of the box, Stumble draws from a built-in list of about 180 hand-picked site
 
 You can type any model name your account can use. For **Other**, enter the service's base URL (for example `https://openrouter.ai/api/v1` or `http://localhost:11434/v1`). A key is optional there, since local models usually don't need one.
 
-Stumble also avoids showing pages from the same website close together: a site you saw in your last 30 stumbles is skipped, and the AI is told not to suggest any page on sites you have already seen. Each batch it asks the AI for leans a few random directions (one-person passion projects, the early web, museum archives, sites from outside the English-speaking world…) so you keep landing somewhere new.
+Stumble also avoids showing pages from the same website close together: a site you saw in your last 30 stumbles is skipped, and the AI is told not to suggest any page on sites you have already seen. Each batch asks for a set mix of kinds of site (mostly toys, games, tools, art, maps, live cams, audio and archives, with only a couple of blogs or essays unless you keep liking them), Stumble trims anything the AI over-delivers, and it avoids showing the same kind of site back to back. Each batch also leans a few random directions (one-person passion projects, the early web, museum archives, sites from outside the English-speaking world…) so you keep landing somewhere new.
 
 ### Privacy and cost
 

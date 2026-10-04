@@ -21,6 +21,9 @@ h2{font-weight:600;font-size:1.2rem;margin:34px 0 10px}
 .lean{font-size:.85rem;color:var(--soft);text-align:right}
 .sub{font-weight:600;margin:16px 0 4px;color:var(--soft);font-size:.9rem}
 [hidden]{display:none!important}
+#adventure{width:100%;accent-color:var(--rose)}
+.scale{display:flex;justify-content:space-between;color:var(--soft);font-size:.88rem}
+.scale strong{color:var(--ink)}
 .check{display:flex;gap:10px;align-items:center;font-weight:600;margin:10px 0}
 .check input{width:18px;height:18px;accent-color:var(--rose)}
 kbd{border:1.5px solid var(--line);border-radius:6px;padding:1px 6px;font:inherit;font-size:.9rem}
@@ -36,6 +39,11 @@ kbd{border:1.5px solid var(--line);border-radius:6px;padding:1px 6px;font:inheri
     <button class="btn" id="addBtn" type="button">Add</button>
   </div>
   <button class="link" id="toggleAll" type="button">Select all</button>
+
+  <h2 class="serif">How adventurous?</h2>
+  <p class="help">Familiar sticks close to what you like. Adventurous takes you far outside your interests.</p>
+  <input id="adventure" type="range" min="0" max="4" step="1" aria-describedby="adventureLabel">
+  <div class="scale"><span>Familiar</span><strong id="adventureLabel"></strong><span>Adventurous</span></div>
 
   <h2 class="serif">Language</h2>
   <p class="help">Stumble will mostly show sites in your language, or ones that need no reading. Sites in other languages still turn up now and then. Works best with an AI key, since the built-in list is mostly in English.</p>

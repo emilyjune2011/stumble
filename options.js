@@ -3,7 +3,7 @@ const CATS = Object.keys(SITES);
 let st = {};
 
 async function load() {
-  st = Object.assign({ interests: CATS, custom: [], saved: [], apiKey: "", lang: "", family: false, familyPin: "", provider: "anthropic", baseUrl: "", model: "claude-sonnet-5" }, await chrome.storage.local.get(null));
+  st = Object.assign({ interests: CATS, custom: [], saved: [], apiKey: "", lang: "", family: false, familyPin: "", adventure: 2, provider: "anthropic", baseUrl: "", model: "claude-sonnet-5" }, await chrome.storage.local.get(null));
 }
 const allCats = () => [...CATS, ...st.custom];
 async function saveInterests() {
@@ -74,6 +74,11 @@ $("lang").onchange = async () => {
   await chrome.storage.local.set({ lang: $("lang").value });
   chrome.runtime.sendMessage({ type: "langChanged" });
 };
+
+const ADVENTURE_LABELS = ["Familiar", "Mostly familiar", "Balanced", "Curious", "Adventurous"];
+const renderAdventure = () => { $("adventureLabel").textContent = ADVENTURE_LABELS[$("adventure").value]; };
+$("adventure").oninput = renderAdventure;
+$("adventure").onchange = () => chrome.storage.local.set({ adventure: Number($("adventure").value) });
 
 /* ---- family-safe mode ---- */
 // The PIN is stored only as a hash, so it can't be read back out of settings.
@@ -175,4 +180,4 @@ $("resetTaste").onclick = async () => {
 };
 
 chrome.storage.onChanged.addListener(async (ch) => { if (ch.saved || ch.taste) { await load(); renderSaved(); renderTaste(); } });
-(async () => { await load(); $("lang").value = LANGS[st.lang] ? st.lang : ""; $("key").value = st.apiKey; $("provider").value = PROVIDERS[st.provider] ? st.provider : "anthropic"; $("baseUrl").value = st.baseUrl; $("model").value = st.model; renderProvider(true); renderFamily(); renderChips(); renderSaved(); renderTaste(); })();
+(async () => { await load(); $("lang").value = LANGS[st.lang] ? st.lang : ""; $("key").value = st.apiKey; $("provider").value = PROVIDERS[st.provider] ? st.provider : "anthropic"; $("baseUrl").value = st.baseUrl; $("model").value = st.model; renderProvider(true); renderFamily(); $("adventure").value = st.adventure; renderAdventure(); renderChips(); renderSaved(); renderTaste(); })();

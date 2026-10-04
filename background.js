@@ -3,7 +3,7 @@ importScripts("sites.js", "providers.js", "langs.js");
 const CATS = Object.keys(SITES);
 const DEFAULTS = {
   interests: CATS, custom: [], seen: [], saved: [], skipped: [], dead: [], queue: [],
-  current: null, apiKey: "", lang: "", family: false, provider: "anthropic", baseUrl: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
+  current: null, apiKey: "", lang: "", family: false, adventure: 2, mood: "", history: [], provider: "anthropic", baseUrl: "", model: "claude-sonnet-5", today: { date: "", n: 0 }, lastError: "",
   taste: { cats: {}, kinds: {} }, ratedSinceRefill: 0
 };
 const norm = u => { try { const x = new URL(u); return (x.hostname.replace(/^www\./, "") + x.pathname.replace(/\/+$/, "") + x.search).toLowerCase(); } catch (e) { return String(u).toLowerCase(); } };
@@ -18,8 +18,31 @@ let refilling = null;
 const KINDS = ["interactive toy", "game", "tool", "archive or collection", "essay or article", "blog", "reference or database", "web art", "audio or radio", "video or film", "live cam or map", "shop or maker", "other"];
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 function weight(t) { return t ? clamp((t.up + 2) / (t.down + 2), 0.2, 5) : 1; }
-function catW(st, cat) { return weight(st.taste.cats[cat]); }
-function kindW(st, kind) { return kind ? weight(st.taste.kinds[kind]) : 1; }
+function catW(st, cat) { return weight(st.taste.cats[cat]) ** adv(st).taste; }
+function kindW(st, kind) { return kind ? weight(st.taste.kinds[kind]) ** adv(st).taste : 1; }
+
+/* ---- familiar <-> adventurous ---- */
+// wild: share of each batch outside their interests. taste: how hard 👍/👎 pull (an exponent on the weights).
+const ADVENTURE = [
+  { wild: 0.03, taste: 1.6, note: "Stay close to what they've liked: more in the same spirit, few surprises." },
+  { wild: 0.08, taste: 1.3, note: "Lean toward what they've liked, with the occasional surprise." },
+  { wild: 0.15, taste: 1, note: "" },
+  { wild: 0.25, taste: 0.7, note: "Stray further than usual: unexpected angles on their interests and some topics they'd never pick." },
+  { wild: 0.4, taste: 0.4, note: "Surprise them. Take them somewhere they'd never think to look, well outside their interests, and avoid close matches to what they've liked." }
+];
+const adv = st => ADVENTURE[clamp(Math.round(st.adventure ?? 2), 0, 4)];
+
+/* ---- moods: a quick steer for this browsing session, set from the toolbar ---- */
+const MOODS = {
+  calm: { kinds: ["audio or radio", "live cam or map", "web art", "interactive toy"], cats: ["Nature & calm", "Travel & places", "Art & design"],
+    note: "Right now they want to wind down: soothing sounds, slow visuals, nature, gentle toys, beautiful places. Nothing loud, competitive, or demanding." },
+  play: { kinds: ["game", "interactive toy", "web art"], cats: ["Games & play", "Weird & wonderful", "Music"],
+    note: "Right now they want to play: games, toys, silly and interactive things, stuff to click and mess with." },
+  learn: { kinds: ["reference or database", "archive or collection", "essay or article", "interactive toy"], cats: ["Science & space", "Reading & ideas", "History", "Words & language"],
+    note: "Right now they want to learn something: interactive explainers, fascinating reference sites, archives, and well-made lessons." }
+};
+const moodFits = (st, q) => { const m = MOODS[st.mood]; return !!m && (m.kinds.includes(q.kind) || m.cats.includes(q.cat)); };
+const moodW = (st, q) => MOODS[st.mood] ? (moodFits(st, q) ? 3 : 1) : 1;
 function tally(taste, item, field, delta) {
   const bump = (bucket, key) => {
     if (!key) return;
@@ -33,8 +56,8 @@ function tally(taste, item, field, delta) {
 }
 // Share of each batch per interest, driven by the tally. Wildcards float between 5% and 40%.
 function shares(st) {
-  const wild = clamp(0.15 * catW(st, "Wildcard"), 0.05, 0.4);
-  const ws = st.interests.map(c => [c, catW(st, c)]);
+  const wild = clamp(adv(st).wild * catW(st, "Wildcard"), 0.02, 0.6);
+  const ws = st.interests.map(c => [c, catW(st, c) * (MOODS[st.mood]?.cats.includes(c) ? 2 : 1)]);
   const total = ws.reduce((a, [, w]) => a + w, 0) || 1;
   const out = ws.map(([c, w]) => [c, Math.max(1, Math.round((1 - wild) * 100 * w / total))]);
   out.push(["Wildcard", Math.round(wild * 100)]);
@@ -63,11 +86,11 @@ const LIBRARY_HOSTS = [...new Set(Object.values(SITES).flatMap(([, list]) => lis
 
 // Each batch leans a few random ways, so the AI doesn't keep reaching for the same famous picks.
 const ANGLES = [
-  "made by a single person as a labor of love", "from a part of the world they probably haven't explored online",
+  "made by a single person as a labor of love (but not a blog)", "from a part of the world they probably haven't explored online",
   "from the early web, before 2010, and still online", "a university, library, or museum project most people never find",
   "built around one very specific hobby or obsession", "a tool or toy that does exactly one thing well",
-  "a collection or archive someone has been building for years", "small and recent, made in the last few years",
-  "a personal site with a strong visual style", "something you can listen to", "a long, beautiful piece of writing",
+  "a collection or archive someone has been building for years", "small and recent, made in the last few years", "a browser game you can finish in ten minutes", "a live view of somewhere in the world",
+  "something with a strong visual style", "something you can listen to", "something you can make or build with",
   "a map, atlas, or explorable place", "a database of something oddly specific", "made by an artist, designer, or musician"
 ];
 const pickAngles = n => [...ANGLES].sort(() => Math.random() - 0.5).slice(0, n);
@@ -85,15 +108,37 @@ function familyNote(st) {
 
 function libraryFresh(st) {
   const seen = new Set(st.seen), out = [];
-  st.interests.forEach(c => { if (SITES[c]) SITES[c][1].forEach(s => { if (!seen.has(norm(s[1])) && !(st.family && NOT_FOR_KIDS.has(s[1]))) out.push({ cat: c, icon: SITES[c][0], title: s[0], url: s[1], blurb: s[2] }); }); });
+  st.interests.forEach(c => { if (SITES[c]) SITES[c][1].forEach(s => { if (!seen.has(norm(s[1])) && !(st.family && NOT_FOR_KIDS.has(s[1]))) out.push({ cat: c, icon: SITES[c][0], title: s[0], url: s[1], blurb: s[2], kind: s[3] || "" }); }); });
   return out;
 }
 
+/* ---- variety: how many of each kind of site to ask for ---- */
+// Left alone, AI models fill a "long tail of the web" batch with blogs and essays, the easiest obscure
+// sites to recall. So each batch asks for an explicit mix, leaning toward things you can do, see, or hear.
+const KIND_BASE = {
+  "interactive toy": 3, "game": 2.5, "tool": 2.5, "web art": 2, "live cam or map": 2, "audio or radio": 2,
+  "archive or collection": 2, "reference or database": 2, "video or film": 1.5, "shop or maker": 1,
+  "other": 1.5, "essay or article": 1, "blog": 0.75
+};
+const WORDY = new Set(["essay or article", "blog"]);
+// Reading-heavy kinds get at most 2 slots each, or 4 if they're clearly liked.
+const kindCap = (st, k) => WORDY.has(k) ? (kindW(st, k) >= 1.5 || MOODS[st.mood]?.kinds.includes(k) ? 4 : 2) : 8;
+function kindMix(st, total = 25) {
+  const ws = Object.entries(KIND_BASE).map(([k, b]) => [k, b * kindW(st, k) * (MOODS[st.mood]?.kinds.includes(k) ? 2.5 : 1)]);
+  const sum = ws.reduce((a, [, w]) => a + w, 0);
+  const mix = ws.map(([k, w]) => { const exact = total * w / sum; return { k, n: Math.min(kindCap(st, k), Math.floor(exact)), rem: exact % 1 }; });
+  // hand out the leftover slots by largest remainder, skipping kinds already at their cap
+  for (let left = total - mix.reduce((a, m) => a + m.n, 0); left > 0; left--) {
+    const m = mix.filter(m => m.n < kindCap(st, m.k)).sort((a, b) => b.rem - a.rem)[0];
+    if (!m) break;
+    m.n++; m.rem = -1;
+  }
+  return Object.fromEntries(mix.filter(m => m.n > 0).map(m => [m.k, m.n]));
+}
+
 function kindNote(st) {
-  const ranked = Object.entries(st.taste.kinds).filter(([, t]) => t.up + t.down >= 2).map(([k, t]) => [k, weight(t)]);
-  const more = ranked.filter(([, w]) => w >= 1.5).map(([k]) => k);
-  const less = ranked.filter(([, w]) => w <= 0.6).map(([k]) => k);
-  return (more.length ? `\nKinds of site they respond to: ${more.join(", ")}.` : "") + (less.length ? `\nKinds of site they tend to skip, so fewer of these: ${less.join(", ")}.` : "");
+  const mix = kindMix(st);
+  return `\nMake the batch this mix of kinds of site: ${Object.entries(mix).map(([k, n]) => `${n} ${k}`).join(", ")}. Label each with the kind it really is; if a site is mostly something to read, it counts as a blog or essay.`;
 }
 
 // Steer most of the batch toward their language without ruling the rest of the web out.
@@ -103,18 +148,20 @@ function langNote(st) {
 }
 
 function buildPrompt(st) {
-  const shown = [...new Set([...seenHosts(st, 3000), ...st.queue.map(q => hostOf(q.url)), ...LIBRARY_HOSTS])].slice(-600);
-  const liked = st.saved.slice(0, 20).map(s => `${s.title} (${hostOf(s.url)})`);
-  const nope = st.skipped.slice(-20).map(s => `${s.title} (${s.host})`);
+  // Only the most recent sites go in the prompt, to keep it short (and cheap). Older ones, built-in
+  // sites, and dead sites are filtered out when the reply comes back, so repeats never reach the queue.
+  const shown = [...new Set([...seenHosts(st, 150), ...st.queue.map(q => hostOf(q.url))])].slice(-150);
+  const liked = st.saved.slice(0, 12).map(s => `${s.title} (${hostOf(s.url)})`);
+  const nope = st.skipped.slice(-12).map(s => `${s.title} (${s.host})`);
   return `You are the engine of a StumbleUpon-style discovery app. Suggest 25 websites for one person to stumble onto, one at a time.
 
 Their interests: ${st.interests.join(", ")}.
 Aim for roughly this share of the batch per interest, based on what they've been liking and skipping: ${shares(st).map(([c, p]) => `${c} ${p}%`).join(", ")}. Wildcard means anything at all outside their interests, to widen their world. Spread things out rather than bunching.${kindNote(st)}
 
-Aim for the delightful long tail of the web: personal sites, niche blogs, single-purpose interactive toys, digital archives and museum collections, fan-made databases, generators, web art, hobbyist reference sites, small magazines, odd one-page projects, beautiful essays. Vary the kind of site as much as the topic. For this batch, lean toward sites that are: ${pickAngles(3).join("; ")}.
-${langNote(st)}${familyNote(st)}Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
+Aim for the delightful long tail of the web: single-purpose interactive toys, generators, browser games, handy little tools, web art, live cams and explorable maps, radio and sound sites, digital archives and museum collections, fan-made databases, hobbyist reference sites, odd one-page projects. Vary the kind of site as much as the topic: someone clicking through should do, see, and hear things, not just read. For this batch, lean toward sites that are: ${pickAngles(3).join("; ")}.
+${adv(st).note ? adv(st).note + "\n" : ""}${MOODS[st.mood] ? MOODS[st.mood].note + "\n" : ""}${langNote(st)}${familyNote(st)}Skip the famous "best of the weird web" picks that every list repeats; they already have those. Dig past the first ideas that come to mind. Avoid huge platforms, storefronts, and news homepages (YouTube, Reddit, Amazon, Facebook, Instagram, Netflix, Spotify, Pinterest, the Wikipedia home page).
 Only include sites you are confident exist and are still online. Prefer a homepage or a long-stable URL over a deep link. Every entry must be a different site.
-${liked.length ? `\nThey loved these, so more in this spirit is welcome: ${liked.join("; ")}.` : ""}${nope.length ? `\nThey marked these "not for me", so steer away from similar: ${nope.join("; ")}.` : ""}${st.dead.length ? `\nThese sites turned out to be dead, avoid them: ${st.dead.slice(-40).join(", ")}.` : ""}
+${liked.length ? `\nThey loved these, so more in this spirit is welcome: ${liked.join("; ")}.` : ""}${nope.length ? `\nThey marked these "not for me", so steer away from similar: ${nope.join("; ")}.` : ""}${st.dead.length ? `\nThese sites turned out to be dead, avoid them: ${st.dead.slice(-15).join(", ")}.` : ""}
 
 They have already seen these websites, so suggest nothing on them, not even a different page: ${shown.join(", ")}
 
@@ -250,7 +297,7 @@ function refill() {
       const now = await load();
       const all = [...CATS, ...now.custom];
       const taken = new Set([...now.seen, ...now.queue.map(q => norm(q.url))]);
-      const hostsTaken = new Set([...seenHosts(now, 300), ...now.queue.map(q => hostOf(q.url))]);
+      const hostsTaken = new Set([...seenHosts(now, 3000), ...now.queue.map(q => hostOf(q.url)), ...LIBRARY_HOSTS]);
       const dead = new Set(now.dead);
       const fresh = [];
       for (const [i, s] of arr.entries()) {
@@ -262,7 +309,10 @@ function refill() {
         fresh.push({ cat, icon: String(s.emoji || "✨").slice(0, 4), title: String(s.title || hostOf(s.url)).slice(0, 80), url: s.url, blurb: String(s.blurb || "").slice(0, 200), kind: KINDS.includes(s.kind) ? s.kind : "", lang: /^([a-z]{2}|none)$/.test(s.lang) ? s.lang : "", audience: String(s.audience || "").toLowerCase().trim() });
         if (now.family && !kidSafe(fresh[fresh.length - 1])) fresh.pop();
       }
-      const queue = now.queue.concat(fresh);
+      // The AI doesn't always stick to the mix, so trim any kind that's well over what was asked for.
+      const want = kindMix(now), got = {};
+      const varied = fresh.filter(q => { const k = q.kind || "other"; got[k] = (got[k] || 0) + 1; return got[k] <= (WORDY.has(k) ? want[k] || 0 : (want[k] || 0) + 2); });
+      const queue = now.queue.concat(varied);
       for (let i = queue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
       await save({ queue, dead: now.dead.concat(gone).slice(-300), lastError: "", ratedSinceRefill: 0 });
     } catch (e) {
@@ -281,7 +331,10 @@ function pickNext(st) {
   const notRecent = list => { const f = list.filter(q => !recentHosts.has(hostOf(q.url))); return f.length ? f : list; };
   const lib = notRecent(libraryFresh(st));
   const pool = notRecent(usable(st));
-  const itemW = q => catW(st, q.cat) * kindW(st, q.kind) * langW(st, q);
+  // Kinds shown in the last 3 stumbles come up less, so you don't get three blogs in a row.
+  const recentKinds = st.recentKinds || [];
+  const varietyW = q => q.kind && recentKinds.includes(q.kind) ? 0.3 : 1;
+  const itemW = q => catW(st, q.cat) * kindW(st, q.kind) * langW(st, q) * varietyW(q) * moodW(st, q);
   // The built-in list is mostly English, so dip into it less when they prefer another language.
   const libShare = st.lang && st.lang !== "en" ? 0.05 : 0.2;
   if (pool.length && (!lib.length || Math.random() >= libShare)) {
@@ -310,7 +363,9 @@ async function stumble(tabId) {
   const today = st.today.date === todayKey ? { date: todayKey, n: st.today.n + 1 } : { date: todayKey, n: 1 };
   const seen = st.seen.concat(norm(pick.url)).slice(-3000);
   const queue = index >= 0 ? st.queue.filter((_, i) => i !== index) : st.queue;
-  await save({ current: pick, seen, queue, today });
+  const recentKinds = pick.kind ? [...(st.recentKinds || []), pick.kind].slice(-3) : st.recentKinds || [];
+  const history = [...(st.history || []), pick].slice(-30);
+  await save({ current: pick, seen, queue, today, recentKinds, history });
   let tab;
   if (tabId != null) tab = await chrome.tabs.update(tabId, { url: pick.url });
   else tab = await chrome.tabs.create({ url: pick.url });
@@ -320,6 +375,22 @@ async function stumble(tabId) {
   landing.set(tab.id, Date.now());
   if (usable(st, queue).length < 10 && aiOn(st)) refill();
   return { current: pick };
+}
+
+// Back goes to the site before this one, and pressing it again keeps going back.
+const dropHost = (history = [], url) => history.filter(h => hostOf(h.url) !== hostOf(url));
+async function goBack(tabId) {
+  const st = await load();
+  const history = [...(st.history || [])];
+  if (history.length < 2 || tabId == null) return { error: "Nothing to go back to yet." };
+  history.pop();
+  const prev = history[history.length - 1];
+  await save({ current: prev, history });
+  await chrome.tabs.update(tabId, { url: prev.url });
+  const { tabs = {} } = await chrome.storage.local.get("tabs");
+  tabs[tabId] = prev;
+  await chrome.storage.local.set({ tabs });
+  return { current: prev };
 }
 
 async function activeTabId() {
@@ -377,7 +448,7 @@ chrome.webNavigation.onErrorOccurred.addListener(async ({ tabId, frameId, url, e
   const cur = await tabCurrent(tabId);
   if (!cur) return;
   const st = await load();
-  await save({ dead: st.dead.concat(hostOf(cur.url), hostOf(url)).filter((h, i, a) => a.indexOf(h) === i).slice(-300) });
+  await save({ dead: st.dead.concat(hostOf(cur.url), hostOf(url)).filter((h, i, a) => a.indexOf(h) === i).slice(-300), history: dropHost(st.history, cur.url) });
   const n = (autoSkips.get(tabId) || 0) + 1;
   autoSkips.set(tabId, n);
   if (n <= 3) stumbleWithFeedback(tabId);
@@ -393,7 +464,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       case "barState": {
         const { barCollapsed = false } = await chrome.storage.local.get("barCollapsed");
         const liked = !!cur && st.saved.some(s => norm(s.url) === norm(cur.url));
-        return { current: cur, liked, collapsed: barCollapsed, error: st.lastError, hasKey: aiOn(st), left: st.queue.length };
+        return { current: cur, liked, collapsed: barCollapsed, error: st.lastError, hasKey: aiOn(st), left: st.queue.length, canBack: (st.history || []).length > 1, mood: st.mood };
       }
       case "like": {
         if (!cur) return {};
@@ -426,8 +497,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       }
       case "resetTaste": await save({ taste: { cats: {}, kinds: {} } }); return {};
       case "dead":
-        if (cur) await save({ dead: st.dead.concat(hostOf(cur.url)).slice(-300), saved: st.saved.filter(s => norm(s.url) !== norm(cur.url)) });
+        if (cur) await save({ dead: st.dead.concat(hostOf(cur.url)).slice(-300), saved: st.saved.filter(s => norm(s.url) !== norm(cur.url)), history: dropHost(st.history, cur.url) });
         return stumble(tabId);
+      case "back": return goBack(tabId);
+      case "mood":
+        await save({ mood: MOODS[msg.value] ? msg.value : "" });
+        // Fetch a batch for the new mood now if few queued sites fit it.
+        if (aiOn(st) && MOODS[msg.value] && usable(st).filter(q => moodFits({ mood: msg.value }, q)).length < 8) refill();
+        return {};
       case "collapse": await save({ barCollapsed: !!msg.value }); return {};
       case "close": await forgetTab(tabId); return {};
       case "options": chrome.runtime.openOptionsPage(); return {};
@@ -464,6 +541,10 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "update") {
     // An error saved by the old version may already be fixed; let the new version report its own.
     await save({ lastError: "" });
+    // Older versions queued lots of blogs and essays; keep only a few so the new mix shows up right away.
+    const { queue: oldQueue = [] } = await chrome.storage.local.get("queue");
+    let wordy = 0;
+    await save({ queue: oldQueue.filter(q => !WORDY.has(q.kind) || ++wordy <= 3) });
     // Switch on interests added since the last version, so updating users see them.
     const { interests, knownCats = CATS.filter(c => c !== "Words & language" && c !== "History") } = await chrome.storage.local.get(["interests", "knownCats"]);
     const added = CATS.filter(c => !knownCats.includes(c));
@@ -477,8 +558,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   }
   setupUpdateCheck();
 });
-// Tab ids don't survive a browser restart, so start clean.
-chrome.runtime.onStartup.addListener(async () => { await chrome.storage.local.set({ tabs: {} }); setupUpdateCheck(); });
+// Tab ids don't survive a browser restart, and a mood is only for one browsing session.
+chrome.runtime.onStartup.addListener(async () => { await chrome.storage.local.set({ tabs: {}, mood: "" }); setupUpdateCheck(); });
 
 /* ---- Auto-update: reload itself when newer files land in the extension folder ---- */
 // Only for the unpacked (load-from-folder) install. Store installs have update_url and update themselves.
